@@ -1,18 +1,18 @@
-import os
 import asyncio
-from typing import Literal
+import os
+from datetime import UTC, datetime
+
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types, errors
+from google.genai import errors, types
 from pydantic import BaseModel, Field, ValidationError
-from datetime import date
-import time
+
 load_dotenv()
 client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
 
 class MovieRecommendation(BaseModel):
     title: str = Field(min_length=1, max_length=100)
-    year: int = Field(ge=1888, le=date.today().year + 1)
+    year: int = Field(ge=1888, le=datetime.now(tz=UTC).year + 1)
     one_line_reason: str = Field(min_length=1, max_length=500)
 
 async def recommend_movie(topic: str) -> MovieRecommendation | None:

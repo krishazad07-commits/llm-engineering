@@ -1,8 +1,9 @@
 import os
+
+import psycopg
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-import psycopg
 from pgvector.psycopg import register_vector
 
 load_dotenv()

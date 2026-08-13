@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, ValidationError
-from typing import Literal
 from datetime import date
+from typing import Literal
+
+from pydantic import BaseModel, Field, ValidationError
 
 
 class Booking(BaseModel):
