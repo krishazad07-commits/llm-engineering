@@ -35,10 +35,8 @@ def search(conn: psycopg.Connection, query_vector: list[float], k: int):
     with conn.cursor() as cur:
         cur.execute(
             """
-            select
-                id,
-                content,
-                embedding <=> %s::vector as distance
+            select id, source_doc, page, chunk_id, content,
+                   embedding <=> %s::vector as distance
             from documents
             order by distance
             limit %s
@@ -56,7 +54,7 @@ def main():
 
     client = genai.Client(api_key=GOOGLE_API_KEY)
 
-    query = "crime and robbery movie"
+    query = "What did Warren Buffett say about Charlie Munger?"
     print(f"Query: {query!r}\n")
 
     query_vector = embed_query(client, query)
@@ -69,12 +67,17 @@ def main():
         print("No documents found. Is the documents table populated?")
         return
 
-    for rank, (doc_id, content, distance) in enumerate(results, start=1):
+    for rank, (doc_id, source, page, chunk_id, content, distance) in enumerate(
+        results, start=1
+    ):
         similarity = 1 - distance
-        print(
-            f"#{rank}  id={doc_id}  distance={distance:.4f}  similarity={similarity:.4f}"
+        source_label = (
+            f"{source} p.{page} chunk {chunk_id}" if source else f"id={doc_id}"
         )
-        print(f"     {content}\n")
+        print(
+            f"#{rank}  {source_label}  distance={distance:.4f}  similarity={similarity:.4f}"
+        )
+        print(f"     {content[:250]}...\n")
 
 
 if __name__ == "__main__":

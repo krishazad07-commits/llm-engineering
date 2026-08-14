@@ -2,7 +2,6 @@ import re
 from pathlib import Path
 
 import pymupdf
-
 from chunker import chunk_text
 
 PDF_PATH = Path(
