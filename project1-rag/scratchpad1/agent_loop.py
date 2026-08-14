@@ -13,6 +13,7 @@ MAX_STEPS = 5
 
 # ---------- The actual tool implementations (fake data) ----------
 
+
 def get_weather(city: str) -> dict:
     fake_data = {
         "Ahmedabad": {"temp_c": 34, "condition": "sunny"},
@@ -47,57 +48,71 @@ TOOL_REGISTRY = {
 # ---------- Tool schemas the model sees ----------
 
 TOOLS = [
-    types.Tool(function_declarations=[
-        types.FunctionDeclaration(
-            name="get_weather",
-            description="Get the current weather for a given city. Returns temperature in Celsius and general conditions.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "city": types.Schema(type=types.Type.STRING, description="Name of the city, e.g. 'Ahmedabad'"),
-                },
-                required=["city"],
+    types.Tool(
+        function_declarations=[
+            types.FunctionDeclaration(
+                name="get_weather",
+                description="Get the current weather for a given city. Returns temperature in Celsius and general conditions.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "city": types.Schema(
+                            type=types.Type.STRING,
+                            description="Name of the city, e.g. 'Ahmedabad'",
+                        ),
+                    },
+                    required=["city"],
+                ),
             ),
-        ),
-        types.FunctionDeclaration(
-            name="get_time",
-            description="Get the current time in a given timezone. Supported: IST, UTC, PST.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "timezone": types.Schema(type=types.Type.STRING, description="Timezone code, e.g. 'IST'"),
-                },
-                required=["timezone"],
+            types.FunctionDeclaration(
+                name="get_time",
+                description="Get the current time in a given timezone. Supported: IST, UTC, PST.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "timezone": types.Schema(
+                            type=types.Type.STRING,
+                            description="Timezone code, e.g. 'IST'",
+                        ),
+                    },
+                    required=["timezone"],
+                ),
             ),
-        ),
-        types.FunctionDeclaration(
-            name="add",
-            description="Add two numbers together and return the sum.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "a": types.Schema(type=types.Type.NUMBER, description="First number"),
-                    "b": types.Schema(type=types.Type.NUMBER, description="Second number"),
-                },
-                required=["a", "b"],
+            types.FunctionDeclaration(
+                name="add",
+                description="Add two numbers together and return the sum.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "a": types.Schema(
+                            type=types.Type.NUMBER, description="First number"
+                        ),
+                        "b": types.Schema(
+                            type=types.Type.NUMBER, description="Second number"
+                        ),
+                    },
+                    required=["a", "b"],
+                ),
             ),
-        ),
-    ])
+        ]
+    )
 ]
 
 
 # ---------- Dispatch: run a tool by name ----------
+
 
 def execute_tool(name: str, args: dict):
     if name not in TOOL_REGISTRY:
         return {"error": f"Unknown tool: {name}"}
     try:
         return TOOL_REGISTRY[name](**args)
-    except Exception as e:# noqa: BLE001 — intentional at tool-dispatch boundary
+    except Exception as e:  # noqa: BLE001 — intentional at tool-dispatch boundary
         return {"error": f"Tool {name} failed: {type(e).__name__}: {e}"}
 
 
 # ---------- The agent loop ----------
+
 
 def run_agent(client: genai.Client, user_query: str) -> str:
     history: list[types.Content] = [
@@ -116,7 +131,9 @@ def run_agent(client: genai.Client, user_query: str) -> str:
         model_content = response.candidates[0].content
         history.append(model_content)
 
-        function_calls = [p.function_call for p in model_content.parts if p.function_call]
+        function_calls = [
+            p.function_call for p in model_content.parts if p.function_call
+        ]
 
         if not function_calls:
             final_text = "".join(p.text for p in model_content.parts if p.text)
@@ -130,7 +147,9 @@ def run_agent(client: genai.Client, user_query: str) -> str:
             result = execute_tool(call.name, dict(call.args))
             print(f"    result: {result}")
             tool_response_parts.append(
-                types.Part.from_function_response(name=call.name, response={"result": result})
+                types.Part.from_function_response(
+                    name=call.name, response={"result": result}
+                )
             )
 
         history.append(types.Content(role="user", parts=tool_response_parts))

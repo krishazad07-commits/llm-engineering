@@ -25,7 +25,7 @@ async def customer_concurrent() -> None:
     start = time.time()
     c1, c2, c3 = await asyncio.gather(
         customer_data("customer A", 3, should_fail=False),
-        customer_data("customer B", 2.5, should_fail=True),   # this one fails
+        customer_data("customer B", 2.5, should_fail=True),  # this one fails
         customer_data("customer C", 2, should_fail=False),
         return_exceptions=True,
     )
@@ -43,16 +43,20 @@ async def customer_concurrent_no_protection() -> None:
     try:
         results = await asyncio.gather(
             customer_data("customer A", 3, should_fail=False),
-            customer_data("customer B", 2.5, should_fail=True),   # this one fails
+            customer_data("customer B", 2.5, should_fail=True),  # this one fails
             customer_data("customer C", 2, should_fail=False),
             # no return_exceptions=True this time
         )
         print(results)
     except ValueError as e:
         elapsed = time.time() - start
-        print(f"\nConcurrent (WITHOUT return_exceptions) crashed after {elapsed:.2f} seconds")
+        print(
+            f"\nConcurrent (WITHOUT return_exceptions) crashed after {elapsed:.2f} seconds"
+        )
         print(f"Whole gather() call failed: {e}")
-        print("Note: we lost A and C's results even though they succeeded (or were about to).")
+        print(
+            "Note: we lost A and C's results even though they succeeded (or were about to)."
+        )
 
 
 asyncio.run(customer_sequential())

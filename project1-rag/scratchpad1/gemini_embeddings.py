@@ -36,11 +36,13 @@ print(doc_embedding.values[:5])
 print(query_embedding.values[:5])
 print(doc_embedding.values[:5] == query_embedding.values[:5])
 
+
 def cosine_similarity(a: list[float], b: list[float]) -> float:
     dot_product = sum(x * y for x, y in zip(a, b))
     magnitude_a = math.sqrt(sum(x * x for x in a))
     magnitude_b = math.sqrt(sum(y * y for y in b))
     return dot_product / (magnitude_a * magnitude_b)
+
 
 similarity = cosine_similarity(doc_embedding.values, query_embedding.values)
 print(f"same sentence, doc vs query embedding: {similarity:.4f}")

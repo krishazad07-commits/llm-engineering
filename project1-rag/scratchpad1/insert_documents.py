@@ -21,6 +21,7 @@ documents = [
     "How photosynthesis converts sunlight into chemical energy in plant cells.",
 ]
 
+
 def embed_documents(client, texts):
     result = client.models.embed_content(
         model="gemini-embedding-001",
@@ -29,15 +30,18 @@ def embed_documents(client, texts):
     )
     return [e.values[:EMBED_DIM] for e in result.embeddings]
 
+
 def main():
     client = genai.Client(api_key=GOOGLE_API_KEY)
-    
+
     print(f"Embedding {len(documents)} documents...")
     embeddings = embed_documents(client, documents)
-    print(f"Got {len(embeddings)} embeddings, each with {len(embeddings[0])} dimensions.")
-    
+    print(
+        f"Got {len(embeddings)} embeddings, each with {len(embeddings[0])} dimensions."
+    )
+
     rows = list(zip(documents, embeddings))
-    
+
     with psycopg.connect(DATABASE_URL) as conn:
         register_vector(conn)
         with conn.cursor() as cur:
@@ -46,8 +50,9 @@ def main():
                 rows,
             )
         conn.commit()
-    
+
     print(f"Inserted {len(rows)} rows into documents table.")
+
 
 if __name__ == "__main__":
     main()

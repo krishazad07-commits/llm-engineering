@@ -71,7 +71,9 @@ def main():
 
     for rank, (doc_id, content, distance) in enumerate(results, start=1):
         similarity = 1 - distance
-        print(f"#{rank}  id={doc_id}  distance={distance:.4f}  similarity={similarity:.4f}")
+        print(
+            f"#{rank}  id={doc_id}  distance={distance:.4f}  similarity={similarity:.4f}"
+        )
         print(f"     {content}\n")
 
 

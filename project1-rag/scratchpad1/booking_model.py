@@ -27,7 +27,7 @@ booking1 = Booking(
     check_out_date=date(2026, 5, 5),
     guests=19,
     total_price=600000,
-    status="confirmed"
+    status="confirmed",
 )
 print(booking1.model_dump_json(indent=2))
 
@@ -43,7 +43,7 @@ try:
         check_out_date=date(2026, 5, 5),
         guests=0,
         total_price=-600000,
-        status="confirmed"
+        status="confirmed",
     )
 except ValidationError as e:
     print(f"Caught {len(e.errors())} errors:")
@@ -62,7 +62,7 @@ try:
         check_out_date=date(2026, 5, 5),
         guests=2,
         total_price=5000,
-        status="draft"
+        status="draft",
     )
 except ValidationError as e:
     print(e)
@@ -80,7 +80,7 @@ try:
         guests=2,
         total_price=5000,
         status="confirmed",
-        location="Ahmedabad"
+        location="Ahmedabad",
     )
 except ValidationError as e:
     print(e)
