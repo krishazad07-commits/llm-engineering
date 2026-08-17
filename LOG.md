@@ -1,4 +1,18 @@
 # LOG.md — Experiment Journal
+# Krish — LLM Engineering Prep Log
+
+**Started:** Wed 5 Aug 2026
+**Target 1 (external, hard):** CV-ready by Mon 22 Sep 2026 — projects on GitHub, READMEs polished, numbers in place. CVs go out end of Sept.
+**Target 2 (interview):** ~mid-Oct 2026 (date not yet fixed)
+
+**Plan:**
+- Core roadmap (Weeks 2-6): Aug 18 – Sep 16 (natural pace, ~31 sessions)
+- Project polish + depth extensions: Sep 17 – Sep 21 (~5 days buffer for READMEs, demo videos, any incomplete work)
+- 🎯 CV send: Mon 22 Sep
+- Interview prep depth: Sep 23 – ~Oct 14 (mocks, whiteboarding, Anthropic reading, question bank reps)
+
+**Trigger to re-plan:** if projects slip past Sep 19, delay CV send by ≤ 5 days rather than shipping unpolished READMEs. Interview date still assumed mid-Oct.
+
 
 Every change I make to my LLM systems gets three lines here.
 This file becomes my interview answers in Week 6.
@@ -89,3 +103,5 @@ Format:
 **Numbers:** ~110 lines total across both new files. Pipeline verified end-to-end via the traceback — embed call succeeded (embedding endpoint still working), Supabase retrieval returned rows, tuple→dataclass conversion completed, `generate_answer` was reached and made the API call. Final Gemini generation call blocked by upstream 503 (Google server overload, not code failure) — SDK's built-in `tenacity` retry already exhausted before giving up, confirming this was capacity-side, not transient.
 
 **What surprised me:** Two things. (1) Model deprecation is a real, live production concern — Gemini retired 2.5-flash mid-session and the API told me the successor name directly in the error message. If I'd hardcoded that model string in 5 places instead of one config constant, this would have been a 5-file grep instead of a 1-line fix. Real motivation for "model IDs live in exactly one config constant per role." (2) The 4xx vs 5xx split showed up organically in the same session — the 404 was my bug (well, the API's schedule), fix once; the 503 was theirs, wait and retry. Different error classes, different responses. The Gemini SDK's built-in tenacity retry already handled the backoff for me — if I still see the 5xx after that, it's a real outage, not something more retries will fix.
+
+**Time check:** Day 13 of 42 (calendar) / Day 9 of ~28 sessions (worked). Currently at end of Week 2 Day 4 equivalent on the roadmap. Owed for Week 2: golden dataset (Tue) + eval harness (Wed). Slipping 2 calendar days into Week 3's slot; absorbed by buffer, not compressed. Target unchanged.
