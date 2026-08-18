@@ -32,19 +32,18 @@ def rows_to_chunks(rows) -> list[RetrievedChunk]:
 
 
 def ask(client, conn, question: str, k: int = 5) -> str:
-    """Full RAG: embed → retrieve → generate → return answer."""
-    # Step 1: turn the question into a vector
     query_vector = embed_query(client, question)
-
-    # Step 2: fetch the top-k rows from the database
     rows = search(conn, query_vector, k)
-
-    # Step 3: convert raw tuples into RetrievedChunk objects
     chunks = rows_to_chunks(rows)
 
-    # Step 4: generate the grounded answer
-    answer = generate_answer(client, question, chunks)
+    # DEBUG — print what we retrieved
+    print(f"\n--- Retrieved {len(chunks)} chunks for: {question!r} ---")
+    for i, c in enumerate(chunks, 1):
+        print(f"  #{i} sim={c.similarity:.4f}  [{c.chunk_id}]")
+        print(f"      {c.content[:120]}...")
+    print("--- End retrieval ---\n")
 
+    answer = generate_answer(client, question, chunks)
     return answer
 
 
@@ -59,7 +58,7 @@ def main():
     client = genai.Client(api_key=GOOGLE_API_KEY)
 
     # Step 3: define the question you're asking
-    question = "What did Warren Buffett say about Charlie Munger?"
+    question = "List the exact float figures from the insurance operations table."
     print(f"question: {question!r}\n")
     # Step 4: open DB connection, register pgvector type, call ask()
     with psycopg.connect(DATABASE_URL) as conn:
