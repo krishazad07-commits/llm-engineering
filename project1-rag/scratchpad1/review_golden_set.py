@@ -44,13 +44,13 @@ def display_candidate(candidate: dict) -> None:
     print(f"ID: {candidate.get('id', 'N/A')}")
     print("=" * 80)
 
-    print(f"\nQUESTION:")
+    print("\nQUESTION:")
     print(candidate.get("question", ""))
 
-    print(f"\nEXPECTED ANSWER:")
+    print("\nEXPECTED ANSWER:")
     print(candidate.get("expected_answer", ""))
 
-    print(f"\nRELEVANT CHUNK HINT:")
+    print("\nRELEVANT CHUNK HINT:")
     print(candidate.get("relevant_chunk_hint", ""))
 
     print("\nMETADATA:")
