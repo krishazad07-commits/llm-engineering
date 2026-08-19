@@ -19,7 +19,7 @@ from google.genai import types
 load_dotenv()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-GEN_MODEL = "gemini-3.6-flash"
+GEN_MODEL = "gemini-3.5-flash-lite"
 
 LETTER_PATH = Path(__file__).parent.parent / "data" / "berkshire_2023.pdf"
 OUTPUT_PATH = Path(__file__).parent / "golden_qa_draft.jsonl"
