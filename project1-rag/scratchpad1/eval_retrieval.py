@@ -144,21 +144,6 @@ def report(results: list[dict]) -> None:
         "ndcg@10",
     ]
 
-def report(results: list[dict]) -> None:
-    """Print aggregate + per-category metrics to stdout."""
-    if not results:
-        print("No results to report.")
-        return
-
-    metric_keys = [
-        "recall@1",
-        "recall@5",
-        "recall@10",
-        "precision@5",
-        "mrr",
-        "ndcg@10",
-    ]
-
     def avg(items: list[dict], key: str) -> float:
         return sum(item[key] for item in items) / len(items)
 
