@@ -44,7 +44,21 @@ def search(conn: psycopg.Connection, query_vector: list[float], k: int):
             (query_vector, k),
         )
         return cur.fetchall()
+    
+def retrieve(
+    client: genai.Client,
+    conn: psycopg.Connection,
+    query: str,
+    k: int = 10,
+) -> list[tuple]:
+    """Embed a query and return top-k chunks from the DB. Caller owns client + conn lifecycle."""
+    # TODO 1: embed the query using embed_query()
+    query_vector = embed_query(client,query)
 
+    # TODO 2: call search() with the vector and k
+    results  = search(conn,query_vector,k)
+    # TODO 3: return the results
+    return results
 
 def main():
     if not GOOGLE_API_KEY:
@@ -57,11 +71,9 @@ def main():
     query = "What did Warren Buffett say about Charlie Munger?"
     print(f"Query: {query!r}\n")
 
-    query_vector = embed_query(client, query)
-
     with psycopg.connect(DATABASE_URL) as conn:
         register_vector(conn)
-        results = search(conn, query_vector, TOP_K)
+        results = retrieve(client, conn, query, TOP_K)
 
     if not results:
         print("No documents found. Is the documents table populated?")
