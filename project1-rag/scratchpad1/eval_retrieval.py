@@ -18,8 +18,8 @@ from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 from google import genai
+from hybrid_search import build_bm25_index, retrieve_hybrid
 from pgvector.psycopg import register_vector
-from search_documents import retrieve
 
 load_dotenv()
 
@@ -194,12 +194,14 @@ def main():
 
     with psycopg.connect(DATABASE_URL) as conn:
         register_vector(conn)
-
+        bm25, chunks = build_bm25_index(conn)
         for i, q in enumerate(questions, start=1):
             # TODO 1: retrieve top-k chunks
-            retrieved = retrieve(
+            retrieved = retrieve_hybrid(
                 client,
                 conn,
+                bm25,
+                chunks,
                 q["question"],
                 TOP_K,
             )
