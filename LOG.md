@@ -133,3 +133,41 @@ Ran the full review against the Berkshire PDF side-by-side. Result: 50/50 accept
 **Numbers:** Baseline retrieval eval over 37 scoreable questions from `golden_qa.jsonl`. Overall: **recall@1 = 0.568, recall@5 = 0.811, recall@10 = 0.811, precision@5 = 0.173, MRR = 0.676, NDCG@10 = 0.710**. Per-category recall@10: extractive 0.941 (n=17), inferential 0.500 (n=6), multi_hop 0.875 (n=8), partial 0.667 (n=6). recall@5 == recall@10 across every category — when retrieval finds the right chunk, it's always within top-5; never rank 6-10. Inspected 2 of 7 failures via `inspect_failure.py`: q_026 (multi_hop, BNSF+BHE) and q_022 (inferential, Ajit Jain) — both were **labeler false-negatives, not retrieval failures**. Chunks contained the right content but hints had ellipses (`...`) and cross-page concatenations that no single chunk can substring-match. True Recall@10 is likely 0.85-0.90 with cleaner hints; the 0.811 number is a floor.
 
 **What surprised me:** [YOUR HONEST LINE — options: "The recall@5 == recall@10 identity was more informative than the absolute numbers — it told me the ranking is either right or wrong, never almost-right, which means Week 3 needs better ranking (rerank, hybrid) not deeper retrieval." OR "The inferential category scoring 0.500 while extractive scored 0.941 was surprising until inspection showed the gap was mostly hint-format issues in Gemini's generated hints, not real retrieval failure." OR write your own.]
+
+## Week 3 Day 13 — Hybrid search built; discovered eval labeler is the bottleneck, not retrieval
+
+**What changed:** Added `rank_bm25` dependency via `uv add`. Built `scratchpad1/hybrid_search.py` with four functions: `tokenize()` (lowercase whitespace-split — deliberately naive, MVP-first), `build_bm25_index()` (loads all 55 chunks from Supabase once, tokenizes, constructs `BM25Okapi`, returns `(index, chunks)` with parallel-list mapping), `search_bm25()` (tokenize query → `get_scores` → sort desc → top-k in same 6-tuple shape as vector search), `rrf_fuse()` (dict-based score accumulation with `k=60` dampening, `chunk[0]` DB primary key as the join identity), and `retrieve_hybrid()` orchestrating the whole chain. Refactored `eval_retrieval.main()` to build the BM25 index once inside the connection `with` block before the eval loop, then call `retrieve_hybrid` instead of `retrieve`. Built `scratchpad1/debug_hybrid.py` as a throwaway single-query diagnostic printing vector-only and BM25-only top-10 side-by-side for arbitrary query strings.
+
+Two real correctness bugs caught and fixed during the build. **First**: initial `rrf_fuse` used `chunk[3]` (the composite `chunk_id`) as the fusion join key, but discovered via `print(chunks[0])` in the REPL that `chunk_id` in the DB is a per-page index (integers like `0`, `1`, `2`), not globally unique across pages. Chunks with the same `chunk_id` from different pages were silently merging under a single dict key in `chunk_lookup`, collapsing to 3 results when `k=5` was requested. Fixed by switching to `chunk[0]` (the auto-increment DB primary key). **Second**: standard REPL-caching bug — file edits weren't visible until process restart. Both lessons logged.
+
+**Numbers:** Ran the eval harness with hybrid retrieval against the same 37 scoreable questions from Day 12.
+
+| Metric | Vector (Day 12) | Hybrid (Day 13) | Delta |
+|---|---|---|---|
+| Recall@1 | 0.568 | 0.054 | **–0.514** |
+| Recall@5 | 0.811 | 0.730 | –0.081 |
+| Recall@10 | 0.811 | 0.811 | 0.000 |
+| MRR | 0.676 | 0.239 | –0.437 |
+| NDCG@10 | 0.710 | 0.376 | –0.334 |
+
+**What surprised me:** Recall@10 completely unchanged while Recall@1 collapsed by 91% — that combination is diagnostic. Retrieval is finding the same right chunks at the same rate; it's just reordering them out of position 1. My first instinct was "hybrid retrieval is broken" — but `debug_hybrid.py` on the Ajit Jain query showed **both vector and BM25 correctly agreeing on id=57 (page 14) at rank 1**, meaning RRF fusion *should* place it firmly at fused rank 1 too (score ≈ 0.033, well above any single-list contributor at ≈ 0.015). Cross-referenced against `is_relevant()`: the golden hint for q_022 is `"Ajit Jain had not joined Berkshire in 1986. ... February 24, 2024"` — a cross-page concatenation with `...` in it that literally cannot appear as a substring in any single chunk. **The Recall@1 collapse isn't hybrid degrading retrieval — it's the labeler false-negative problem from Day 12 becoming visible under reranking.** Vector-only happened to place labeler-friendly extractive chunks at rank 1 often enough to score 0.568; hybrid slightly reorders those same chunks, and the fragile substring-match labeler now says False for the exact same correct retrievals. The real Recall@10 = 0.811 identity between vector and hybrid confirms the retrievers are equivalent at the "did we find it" level; MRR/NDCG differences are labeler artifacts, not retrieval facts. Bigger lesson: I wasn't measuring retrieval quality — I was measuring the interaction between retrieval quality and labeler robustness. Cannot fairly compare retrieval strategies until the labeler is a stable measuring stick. Day 14 opens with manually annotating `relevant_chunk_ids` on the 37 scoreable questions, upgrading `is_relevant()` to prefer ID-based matching with hint-substring as fallback, then re-running both vector and hybrid evals against the honest labeler.
+
+Day 14 (Aug 25, 2026):
+
+What changed:
+- Built annotate_golden_set.py: interactive harness that shows top-15 vector candidates per question and prompts for DB primary key labels
+- Built show_chunk.py: on-demand full-content viewer for one chunk by DB id
+- Annotated relevant_chunk_ids on all 37 scoreable questions
+- Adopted rule: single best chunk (or minimum set); [] if no top-15 chunk contains the answer; for inferential/multi-hop, label chunks with raw facts needed for reasoning
+
+What happened:
+- 37/37 questions labeled with DB primary key integers
+- 4 questions required audit/re-annotation after catching a preview-truncation bug (PREVIEW_CHARS=160 was cutting off exactly where numeric answers lived)
+- Bumped PREVIEW_CHARS to 400; still needed show_chunk.py for boundary cases
+- Pattern noticed: many multi_hop questions use adjacent chunks (19+20, 49+50, 58+59), suggesting parent-document / context-window retrieval as a Week 3 experiment
+- Category noise found: some multi_hop questions collapse to single-chunk in actual chunking (q_028, q_029)
+
+What surprised me:
+- The preview bug was silently corrupting my judgments — caught only when I trusted my instinct that "the answer should be in the letter, so why isn't it in these chunks"
+- Partial questions are cleaner to label than expected: single chunk covers the answerable half, the unanswerable half is generation's problem
+- q_022 required exactly the ellipsis-cross-page pattern that broke yesterday's labeler — the ID-based labeler will finally credit retrieval correctly on it tomorrow
