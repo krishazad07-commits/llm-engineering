@@ -5,8 +5,9 @@ Writes after each; safe to Ctrl-C and resume.
 """
 
 from __future__ import annotations
-import os
+
 import json
+import os
 from pathlib import Path
 
 import psycopg

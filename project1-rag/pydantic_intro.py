@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ValidationError
 
+
 class User(BaseModel):
     name:str
     age:int

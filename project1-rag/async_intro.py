@@ -1,5 +1,6 @@
 import asyncio
 
+
 async def greet()->str:
     return"Herllo, World!"
 
@@ -21,6 +22,7 @@ asyncio.run(main())
 
 
 import time
+
 
 async def fetch_data(name: str, delay: float) -> str:
     print(f"Starting {name}...")
