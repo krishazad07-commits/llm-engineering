@@ -4,17 +4,21 @@ eval_retrieval.py — measure baseline retrieval quality on the golden set.
 Usage: uv run scratchpad1/eval_retrieval.py
 
 Reads:  golden_qa.jsonl (loads only answerable questions, skips 8 unanswerables)
+
 Writes: eval_results.jsonl (per-question metrics)
         prints an aggregate report to stdout
 
 Metrics computed: Recall@1, Recall@5, Recall@10, Precision@5, MRR, NDCG@10
+                 Chunk Coverage@5, Chunk Coverage@10
 """
+
 import json
 import math
 import os
 import re
 from pathlib import Path
-
+from hybrid_search import build_bm25_index, retrieve_hybrid
+from search_documents import retrieve
 import psycopg
 from dotenv import load_dotenv
 from google import genai
@@ -28,11 +32,10 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
-GOLDEN_PATH = Path(__file__).parent/"golden_qa.jsonl"
-
-RESULTS_PATH = Path(__file__).parent/"eval_results.jsonl"
-
+GOLDEN_PATH = Path(__file__).parent / "golden_qa.jsonl"
+RESULTS_PATH = Path(__file__).parent / "eval_results.jsonl"
 TOP_K = 10
+
 
 def load_scoreable_questions(path: Path) -> list[dict]:
     """Load golden QA entries that count toward retrieval metrics.
@@ -52,6 +55,7 @@ def load_scoreable_questions(path: Path) -> list[dict]:
 
             if item.get("answerable") is not True:
                 continue
+
             if item.get("category") == "table_dependent":
                 continue
 
@@ -61,19 +65,40 @@ def load_scoreable_questions(path: Path) -> list[dict]:
 
 
 # Matches "(Page 5)" or "(page 12)" or "(p. 5)" or "(p.5)"
-PAGE_MARKER = re.compile(r"\((?:page|p\.?)\s*\d+\)", re.IGNORECASE)
+PAGE_MARKER = re.compile(
+    r"\((?:page|p\.?)\s*\d+\)",
+    re.IGNORECASE,
+)
 
 
-def is_relevant(retrieved_text: str, hint: str) -> bool:
-    """Return True if any cleaned segment of the hint appears in the retrieved text."""
-    # Remove page markers like "(Page 5)"
+def is_relevant(chunk: tuple, record: dict) -> bool:
+    """Return True if the chunk is relevant to the question.
+
+    Prefers ID set-membership when relevant_chunk_ids is present on the record.
+    Falls back to hint-substring matching for records that lack the field
+    (backward-compat with older golden set schema).
+    """
+    chunk_id = chunk[0]
+    relevant_ids = record.get("relevant_chunk_ids")
+
+    # Use annotated chunk IDs when the field exists.
+    if relevant_ids is not None:
+        return chunk_id in set(relevant_ids)
+
+    # Fall back to the old hint-substring logic.
+    hint = record.get("relevant_chunk_hint", "")
+
     cleaned = PAGE_MARKER.sub("", hint)
 
-    # Some hints have multiple quoted segments joined by ";"
-    segments = [seg.strip().strip('"').strip("'") for seg in cleaned.split(";")]
+    segments = [
+        seg.strip().strip('"').strip("'")
+        for seg in cleaned.split(";")
+    ]
+
     segments = [seg for seg in segments if seg]
 
-    haystack = retrieved_text.lower()
+    haystack = chunk[4].lower()
+
     for segment in segments:
         if segment.lower() in haystack:
             return True
@@ -81,12 +106,41 @@ def is_relevant(retrieved_text: str, hint: str) -> bool:
     return False
 
 
-def label_ranking(retrieved_chunks: list[tuple], hint: str) -> list[bool]:
+def chunk_coverage_at_k(
+    retrieved_chunks: list[tuple],
+    record: dict,
+    k: int,
+) -> float:
+    """Return fraction of relevant_chunk_ids that appear in the top-k retrieved.
+
+    Diagnostic metric that distinguishes 1-of-3 from 3-of-3 multi-hop retrievals.
+    Returns 0.0 when relevant_chunk_ids is missing or empty.
+    """
+    relevant_ids = record.get("relevant_chunk_ids")
+
+    # Missing or empty annotation → undefined coverage.
+    if not relevant_ids:
+        return 0.0
+
+    # Get IDs from the top-k retrieved chunks.
+    retrieved_ids = {chunk[0] for chunk in retrieved_chunks[:k]}
+
+    # Calculate fraction of relevant IDs retrieved.
+    relevant_ids_set = set(relevant_ids)
+
+    return len(relevant_ids_set & retrieved_ids) / len(relevant_ids_set)
+
+
+def label_ranking(
+    retrieved_chunks: list[tuple],
+    record: dict,
+) -> list[bool]:
     """Label each retrieved chunk as relevant or not, preserving ranking order."""
     return [
-        is_relevant(chunk[4], hint)
+        is_relevant(chunk, record)
         for chunk in retrieved_chunks
     ]
+
 
 def recall_at_k(labels: list[bool], k: int) -> float:
     """Return 1.0 if any of the top-k labels is True, else 0.0.
@@ -95,13 +149,18 @@ def recall_at_k(labels: list[bool], k: int) -> float:
     the aggregate Recall@k metric.
     """
     top_k = labels[:k]
+
     return 1.0 if any(top_k) else 0.0
+
 
 def precision_at_k(labels: list[bool], k: int) -> float:
     """Return the fraction of top-k labels that are True."""
     top_k = labels[:k]
+
     relevant_count = sum(top_k)
+
     return relevant_count / float(k)
+
 
 def reciprocal_rank(labels: list[bool]) -> float:
     """Return 1 / (rank of first True), or 0.0 if no True is found.
@@ -113,6 +172,7 @@ def reciprocal_rank(labels: list[bool]) -> float:
             return 1 / (index + 1)
 
     return 0.0
+
 
 def ndcg_at_k(labels: list[bool], k: int) -> float:
     """Return NDCG@k for a binary single-relevance ranking.
@@ -129,6 +189,7 @@ def ndcg_at_k(labels: list[bool], k: int) -> float:
 
     return 0.0
 
+
 def report(results: list[dict]) -> None:
     """Print aggregate + per-category metrics to stdout."""
     if not results:
@@ -142,26 +203,29 @@ def report(results: list[dict]) -> None:
         "precision@5",
         "mrr",
         "ndcg@10",
+        "chunk_coverage@5",
+        "chunk_coverage@10",
     ]
 
     def avg(items: list[dict], key: str) -> float:
         return sum(item[key] for item in items) / len(items)
 
-    # TODO 1: overall metrics
+    # Overall metrics
     print("\n=== Overall Retrieval Metrics ===")
+
     print(f"Questions: {len(results)}")
 
     for key in metric_keys:
         print(f"{key}: {avg(results, key):.3f}")
 
-    # TODO 2: group results by category
+    # Group results by category
     by_category = {}
 
     for item in results:
         category = item["category"]
         by_category.setdefault(category, []).append(item)
 
-    # TODO 3: per-category metrics
+    # Per-category metrics
     print("\n=== By Category ===")
 
     for category in sorted(by_category):
@@ -172,19 +236,24 @@ def report(results: list[dict]) -> None:
         for key in metric_keys:
             print(f"{key}: {avg(category_results, key):.3f}")
 
-    # TODO 4: exclusions
+    # Exclusions
     print(
         "\nExcluded: 8 unanswerable, 5 table_dependent "
         "(see LOG for reasons)"
     )
+
+
 def main():
     if not GOOGLE_API_KEY:
         raise RuntimeError("GOOGLE_API_KEY not set in .env")
+
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL not set in .env")
 
     client = genai.Client(api_key=GOOGLE_API_KEY)
+
     questions = load_scoreable_questions(GOLDEN_PATH)
+
     print(
         f"Loaded {len(questions)} scoreable questions "
         f"(excluded: 8 unanswerable, 5 table_dependent)\n"
@@ -194,25 +263,26 @@ def main():
 
     with psycopg.connect(DATABASE_URL) as conn:
         register_vector(conn)
+
         bm25, chunks = build_bm25_index(conn)
+
         for i, q in enumerate(questions, start=1):
-            # TODO 1: retrieve top-k chunks
-            retrieved = retrieve_hybrid(
+
+            # Retrieve top-k chunks
+            retrieved = retrieve(
                 client,
                 conn,
-                bm25,
-                chunks,
                 q["question"],
                 TOP_K,
             )
 
-            # TODO 2: label the retrieved chunks
+            # Label the retrieved chunks
             labels = label_ranking(
                 retrieved,
-                q["relevant_chunk_hint"],
+                q,
             )
 
-            # TODO 3: calculate metrics
+            # Calculate metrics
             result = {
                 "id": q["id"],
                 "category": q["category"],
@@ -222,11 +292,21 @@ def main():
                 "precision@5": precision_at_k(labels, 5),
                 "mrr": reciprocal_rank(labels),
                 "ndcg@10": ndcg_at_k(labels, 10),
+                "chunk_coverage@5": chunk_coverage_at_k(
+                    retrieved,
+                    q,
+                    5,
+                ),
+                "chunk_coverage@10": chunk_coverage_at_k(
+                    retrieved,
+                    q,
+                    10,
+                ),
             }
 
             results.append(result)
 
-            # TODO 4: print progress
+            # Print progress
             print(
                 f"[{i}/{len(questions)}] "
                 f"{q['id']} "
@@ -234,12 +314,12 @@ def main():
                 f"recall@10={result['recall@10']:.3f}"
             )
 
-    # TODO 5: write results as JSONL
+    # Write results as JSONL
     with RESULTS_PATH.open("w", encoding="utf-8") as f:
         for result in results:
             f.write(json.dumps(result) + "\n")
 
-    # TODO 6: report comes next
+    # Report
     report(results)
 
 

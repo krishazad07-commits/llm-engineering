@@ -171,3 +171,33 @@ What surprised me:
 - The preview bug was silently corrupting my judgments — caught only when I trusted my instinct that "the answer should be in the letter, so why isn't it in these chunks"
 - Partial questions are cleaner to label than expected: single chunk covers the answerable half, the unanswerable half is generation's problem
 - q_022 required exactly the ellipsis-cross-page pattern that broke yesterday's labeler — the ID-based labeler will finally credit retrieval correctly on it tomorrow
+
+## Week 3 Day 15 — Eval labeler fixed; vector baseline established
+
+**what changed:** Added ID-based relevance labeling to `is_relevant()` using `relevant_chunk_ids`, with hint-substring matching retained only as a backward-compatible fallback. Added `chunk_coverage_at_k()` to measure how many annotated relevant chunks are retrieved, exposing multi-hop gaps. Updated `label_ranking()`, metric reporting, and result generation for the new evaluation.
+
+**Numbers:** Re-ran the same 37 scoreable questions with vector retrieval and the new labeler.
+
+| Metric            | Vector (Day 12 old) | Vector (Day 15 new) |
+| ----------------- | ------------------: | ------------------: |
+| Recall@1          |               0.568 |           **0.757** |
+| Recall@5          |               0.811 |           **1.000** |
+| Recall@10         |               0.811 |           **1.000** |
+| Precision@5       |                   — |           **0.222** |
+| MRR               |               0.676 |           **0.855** |
+| NDCG@10           |               0.710 |           **0.891** |
+| Chunk coverage@5  |                   — |           **0.950** |
+| Chunk coverage@10 |                   — |           **0.977** |
+
+**By category:**
+
+| Category    |  n |   R@1 |   R@5 |  R@10 |   P@5 |   MRR | NDCG@10 | Coverage@5 | Coverage@10 |
+| ----------- | -: | ----: | ----: | ----: | ----: | ----: | ------: | ---------: | ----------: |
+| Extractive  | 17 | 0.765 | 1.000 | 1.000 | 0.200 | 0.858 |   0.894 |      1.000 |       1.000 |
+| Inferential |  6 | 0.833 | 1.000 | 1.000 | 0.200 | 0.917 |   0.938 |      0.917 |       1.000 |
+| Multi-hop   |  8 | 0.750 | 1.000 | 1.000 | 0.275 | 0.817 |   0.861 |      0.833 |       0.896 |
+| Partial     |  6 | 0.667 | 1.000 | 1.000 | 0.233 | 0.833 |   0.877 |      1.000 |       1.000 |
+
+**What surprised me:** The new labeler completely changed the interpretation of the old results. Day 12's **Recall@10 = 0.811 ceiling was a labeler artifact**; real vector Recall@10 is **1.000**, with Recall@5 also reaching **1.000**. The new coverage metric shows that retrieval is not equally complete for every question: overall coverage is **0.950@5** and **0.977@10**, with multi-hop being the weakest at **0.833@5 / 0.896@10**.
+
+The hybrid run was unexpectedly poor at Recall@1 despite maintaining Recall@10 = 1.000, showing that the problem is primarily **ranking/reordering rather than retrieval recall**.
