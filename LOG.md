@@ -201,3 +201,11 @@ What surprised me:
 **What surprised me:** The new labeler completely changed the interpretation of the old results. Day 12's **Recall@10 = 0.811 ceiling was a labeler artifact**; real vector Recall@10 is **1.000**, with Recall@5 also reaching **1.000**. The new coverage metric shows that retrieval is not equally complete for every question: overall coverage is **0.950@5** and **0.977@10**, with multi-hop being the weakest at **0.833@5 / 0.896@10**.
 
 The hybrid run was unexpectedly poor at Recall@1 despite maintaining Recall@10 = 1.000, showing that the problem is primarily **ranking/reordering rather than retrieval recall**.
+
+## Week 3 Day 16 — Reranker built; net +1 Recall@1, but real churn underneath
+
+**What changed:** Added `rerank_search.py` — two-stage retrieval: vector wide_k=20 → `bge-reranker-v2-m3` → top-10. Refactored `eval_retrieval.py` to support `--retriever {vector, hybrid, reranked}` with per-retriever output files so runs no longer overwrite each other. The reranker is lazy-loaded and returns the same tuple shape as `retrieve()` for a drop-in swap.
+
+**Numerical results:** Re-confirmed vector baseline at R@1 = 0.757, MRR = 0.855, NDCG@10 = 0.891, Coverage@5 = 0.950. Reranked: R@1 = 0.784, MRR = 0.879, NDCG@10 = 0.910, Coverage@5 = 0.973. Delta: +0.027 R@1, +0.024 MRR, +0.019 NDCG@10, +0.023 Coverage@5. Recall@10 stayed at 1.000, as predicted — reranking can reorder retrieved candidates but cannot recover candidates that were never retrieved. Per-question breakdown: 5 fixes, 4 losses, 4 still-broken → net +1 question. Biggest category win was partial (R@1: 0.667 → 0.833). Inferential showed no movement across the metrics.
+
+**What surprised me:** My prediction was too optimistic. I predicted R@1 = 0.865 based on the expectation that the cross-encoder would move most rank-1 misses into the correct position; the actual result was 0.784. More importantly, the reranker did not simply improve the existing ranking — it introduced churn: 5 questions were fixed, but 4 previously-correct questions were pushed into failure. The aggregate numbers are positive, but the per-question result shows that the reranker is not strictly better than vector retrieval on this corpus; it has a different failure profile. Net +1 Recall@1 is the result, not the whole story.

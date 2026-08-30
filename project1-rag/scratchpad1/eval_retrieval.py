@@ -11,19 +11,20 @@ Writes: eval_results.jsonl (per-question metrics)
 Metrics computed: Recall@1, Recall@5, Recall@10, Precision@5, MRR, NDCG@10
                  Chunk Coverage@5, Chunk Coverage@10
 """
-
+import argparse
 import json
 import math
 import os
 import re
 from pathlib import Path
-from hybrid_search import build_bm25_index, retrieve_hybrid
-from search_documents import retrieve
+
 import psycopg
 from dotenv import load_dotenv
 from google import genai
 from hybrid_search import build_bm25_index, retrieve_hybrid
 from pgvector.psycopg import register_vector
+from rerank_search import retrieve_reranked
+from search_documents import retrieve
 
 load_dotenv()
 
@@ -244,6 +245,26 @@ def report(results: list[dict]) -> None:
 
 
 def main():
+    # Parse CLI args
+    parser = argparse.ArgumentParser(
+        description="Run retrieval evaluation on the golden set.",
+    )
+    parser.add_argument(
+        "--retriever",
+        choices=["vector", "hybrid", "reranked"],
+        default="vector",
+        help="Which retriever to evaluate.",
+    )
+    args = parser.parse_args()
+
+    print(f"\n=== Running eval with retriever: {args.retriever} ===\n")
+
+    # Write results to a separate file for each retriever
+    results_path = Path(__file__).parent / (
+        f"eval_results_{args.retriever}.jsonl"
+    )
+
+    # Check required environment variables
     if not GOOGLE_API_KEY:
         raise RuntimeError("GOOGLE_API_KEY not set in .env")
 
@@ -264,17 +285,38 @@ def main():
     with psycopg.connect(DATABASE_URL) as conn:
         register_vector(conn)
 
+        # TODO: only build BM25 when args.retriever == "hybrid"
         bm25, chunks = build_bm25_index(conn)
 
         for i, q in enumerate(questions, start=1):
 
-            # Retrieve top-k chunks
-            retrieved = retrieve(
-                client,
-                conn,
-                q["question"],
-                TOP_K,
-            )
+            # Retrieve top-k chunks using the selected retriever
+            if args.retriever == "vector":
+                retrieved = retrieve(
+                    client,
+                    conn,
+                    q["question"],
+                    TOP_K,
+                )
+
+            elif args.retriever == "hybrid":
+                retrieved = retrieve_hybrid(
+                    client,
+                    conn,
+                    bm25,
+                    chunks,
+                    q["question"],
+                    TOP_K,
+                )
+
+            elif args.retriever == "reranked":
+                retrieved = retrieve_reranked(
+                    client,
+                    conn,
+                    q["question"],
+                    k=TOP_K,
+                    wide_k=20,
+                )
 
             # Label the retrieved chunks
             labels = label_ranking(
@@ -315,11 +357,12 @@ def main():
             )
 
     # Write results as JSONL
-    with RESULTS_PATH.open("w", encoding="utf-8") as f:
+    with results_path.open("w", encoding="utf-8") as f:
         for result in results:
             f.write(json.dumps(result) + "\n")
 
     # Report
+    print(f"\n\n### Results for retriever: {args.retriever} ###")
     report(results)
 
 
