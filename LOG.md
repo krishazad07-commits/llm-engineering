@@ -209,3 +209,34 @@ The hybrid run was unexpectedly poor at Recall@1 despite maintaining Recall@10 =
 **Numerical results:** Re-confirmed vector baseline at R@1 = 0.757, MRR = 0.855, NDCG@10 = 0.891, Coverage@5 = 0.950. Reranked: R@1 = 0.784, MRR = 0.879, NDCG@10 = 0.910, Coverage@5 = 0.973. Delta: +0.027 R@1, +0.024 MRR, +0.019 NDCG@10, +0.023 Coverage@5. Recall@10 stayed at 1.000, as predicted — reranking can reorder retrieved candidates but cannot recover candidates that were never retrieved. Per-question breakdown: 5 fixes, 4 losses, 4 still-broken → net +1 question. Biggest category win was partial (R@1: 0.667 → 0.833). Inferential showed no movement across the metrics.
 
 **What surprised me:** My prediction was too optimistic. I predicted R@1 = 0.865 based on the expectation that the cross-encoder would move most rank-1 misses into the correct position; the actual result was 0.784. More importantly, the reranker did not simply improve the existing ranking — it introduced churn: 5 questions were fixed, but 4 previously-correct questions were pushed into failure. The aggregate numbers are positive, but the per-question result shows that the reranker is not strictly better than vector retrieval on this corpus; it has a different failure profile. Net +1 Recall@1 is the result, not the whole story.
+
+# Day 17 — Contextual Retrieval
+
+## Goal
+Test whether adding LLM-generated context to each chunk before embedding improves retrieval.
+
+## Implementation
+- Added `context` column to `documents_contextual`.
+- Generated 1–2 sentence contexts using Gemini and neighboring chunks.
+- Used `context + "\n\n" + content` for embeddings.
+- Used `gemini-embedding-001` with 768 dimensions.
+- Batched embeddings (20 per request).
+- Added contextual vector retriever while preserving the existing eval tuple shape.
+- Used `(source_doc, chunk_id)` ordering for neighbors.
+- Smoke-tested before running the full pipeline.
+
+## Results
+
+| Metric | Vector | Reranked | Contextual | Δ vs Vector |
+|---|---:|---:|---:|---:|
+| Recall@1 | 0.757 | 0.784 | **0.784** | **+0.027** |
+| Recall@5 | 1.000 | 1.000 | 1.000 | 0 |
+| Recall@10 | 1.000 | 1.000 | 1.000 | 0 |
+| MRR | 0.855 | 0.879 | **0.863** | +0.008 |
+| NDCG@10 | 0.891 | 0.910 | **0.897** | +0.006 |
+| Coverage@5 | 0.950 | 0.973 | **0.977** | **+0.027** |
+| Coverage@10 | 0.977 | 0.986 | 0.977 | 0 |
+
+## Finding
+Contextual retrieval improved over plain vector retrieval, especially Recall@1 (+0.027), but did not beat the reranker on MRR/NDCG. It appears useful as a retrieval improvement, but not a replacement for reranking.
+**What surprised me:**I thought that th contextual will help improve the recall@1 score by a observable margine however as i ran the tests ut showed no improvement overall the scores of muilti_hop increassed but the scores of Inferential dropped this was really surpricing 

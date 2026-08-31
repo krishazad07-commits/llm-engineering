@@ -25,6 +25,7 @@ from hybrid_search import build_bm25_index, retrieve_hybrid
 from pgvector.psycopg import register_vector
 from rerank_search import retrieve_reranked
 from search_documents import retrieve
+from search_documents_contextual import retrieve as retrieve_contextual
 
 load_dotenv()
 
@@ -251,9 +252,10 @@ def main():
     )
     parser.add_argument(
         "--retriever",
-        choices=["vector", "hybrid", "reranked"],
+        choices=["vector", "hybrid", "reranked", "contextual"],
         default="vector",
         help="Which retriever to evaluate.",
+        
     )
     args = parser.parse_args()
 
@@ -316,6 +318,13 @@ def main():
                     q["question"],
                     k=TOP_K,
                     wide_k=20,
+                )
+            elif args.retriever == "contextual":
+                retrieved = retrieve_contextual(
+                    client,
+                    conn,
+                    q["question"],
+                    TOP_K,
                 )
 
             # Label the retrieved chunks
