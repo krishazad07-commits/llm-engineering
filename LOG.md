@@ -211,32 +211,24 @@ The hybrid run was unexpectedly poor at Recall@1 despite maintaining Recall@10 =
 **What surprised me:** My prediction was too optimistic. I predicted R@1 = 0.865 based on the expectation that the cross-encoder would move most rank-1 misses into the correct position; the actual result was 0.784. More importantly, the reranker did not simply improve the existing ranking — it introduced churn: 5 questions were fixed, but 4 previously-correct questions were pushed into failure. The aggregate numbers are positive, but the per-question result shows that the reranker is not strictly better than vector retrieval on this corpus; it has a different failure profile. Net +1 Recall@1 is the result, not the whole story.
 
 # Day 17 — Contextual Retrieval
-
-## Goal
-Test whether adding LLM-generated context to each chunk before embedding improves retrieval.
-
-## Implementation
-- Added `context` column to `documents_contextual`.
-- Generated 1–2 sentence contexts using Gemini and neighboring chunks.
-- Used `context + "\n\n" + content` for embeddings.
-- Used `gemini-embedding-001` with 768 dimensions.
-- Batched embeddings (20 per request).
-- Added contextual vector retriever while preserving the existing eval tuple shape.
-- Used `(source_doc, chunk_id)` ordering for neighbors.
-- Smoke-tested before running the full pipeline.
-
-## Results
-
-| Metric | Vector | Reranked | Contextual | Δ vs Vector |
-|---|---:|---:|---:|---:|
-| Recall@1 | 0.757 | 0.784 | **0.784** | **+0.027** |
-| Recall@5 | 1.000 | 1.000 | 1.000 | 0 |
-| Recall@10 | 1.000 | 1.000 | 1.000 | 0 |
-| MRR | 0.855 | 0.879 | **0.863** | +0.008 |
-| NDCG@10 | 0.891 | 0.910 | **0.897** | +0.006 |
-| Coverage@5 | 0.950 | 0.973 | **0.977** | **+0.027** |
-| Coverage@10 | 0.977 | 0.986 | 0.977 | 0 |
-
-## Finding
-Contextual retrieval improved over plain vector retrieval, especially Recall@1 (+0.027), but did not beat the reranker on MRR/NDCG. It appears useful as a retrieval improvement, but not a replacement for reranking.
-**What surprised me:**I thought that th contextual will help improve the recall@1 score by a observable margine however as i ran the tests ut showed no improvement overall the scores of muilti_hop increassed but the scores of Inferential dropped this was really surpricing 
+## What changed
+Today I worked on **contextual retrieval**. The basic idea was to add some extra context to the existing chunks before creating their embeddings, so that the chunks have more meaning when they are searched.
+I made 3 main scripts for this:
+* `gemini_generate.py` — generates the extra context for the chunks.
+* `embed_contextual.py` — creates embeddings using the contextualized chunks.
+* `ingest_contextual.py` — puts the contextual embeddings into the database so I can test them.
+The tricky part wasn't the scripts, it was the small design calls. I made the embedding column nullable so ingest and embed could run as separate resume-safe scripts. And I hit an ordering bug when picking neighbor chunks — chunk_id is position-within-page (0-3), not document order — so the correct ORDER BY is (source_doc, page, chunk_id). Caught it on the 3-chunk smoke test before scaling.
+## Numerical Results
+| Metric      | Vector |  Reranked | Contextual |
+| ----------- | -----: | --------: | ---------: |
+| Recall@1    |  0.757 |     0.784 |  **0.784** |
+| Recall@5    |  1.000 |     1.000 |      1.000 |
+| Recall@10   |  1.000 |     1.000 |      1.000 |
+| MRR         |  0.855 | **0.879** |      0.863 |
+| NDCG@10     |  0.891 | **0.910** |      0.897 |
+| Coverage@5  |  0.950 |     0.973 |  **0.977** |
+| Coverage@10 |  0.977 | **0.986** |      0.977 |
+The result was honestly a bit surprising. Recall@1 only went from **0.757 to 0.784 (+0.027)**, which is the same Recall@1 that I got with the reranker.
+Recall@5 and Recall@10 were already at **1.0**, so contextual retrieval couldn't really improve those. The interesting part was Coverage@5, which increased to **0.977**, the best out of the three setups.
+## What surprised me
+My guess for the inferential drop: reasoning-shaped questions don't have obvious keyword hooks, so prepended narrative context just adds topical noise instead of helping. And even though contextual matched the reranker on R@1, they're doing different things — reranker reorders, contextual changes the representation — so they're not really competitors, could probably stack them.
