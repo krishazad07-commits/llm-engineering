@@ -232,3 +232,23 @@ The result was honestly a bit surprising. Recall@1 only went from **0.757 to 0.7
 Recall@5 and Recall@10 were already at **1.0**, so contextual retrieval couldn't really improve those. The interesting part was Coverage@5, which increased to **0.977**, the best out of the three setups.
 ## What surprised me
 My guess for the inferential drop: reasoning-shaped questions don't have obvious keyword hooks, so prepended narrative context just adds topical noise instead of helping. And even though contextual matched the reranker on R@1, they're doing different things — reranker reorders, contextual changes the representation — so they're not really competitors, could probably stack them.
+
+# Day 18 – Generation + Abstention Eval
+
+## What changed
+
+Today I built the **generation half of RAG** and connected retrieval to Gemini for grounded answers. I added `generate_answer.py` with context-only answering, composite citations, and `INSUFFICIENT_CONTEXT` for questions that cannot be answered from the retrieved chunks.
+
+I also refactored `gemini_generate.py` into a generic retry decorator for 429/503 errors and applied it to the embedding call as well. Then I built `eval_generation.py` to test all golden questions for hallucinations and over-refusals.
+
+## Problems / Findings
+
+The sanity test worked: an answerable question produced a grounded answer with the correct citations, while an unanswerable question correctly returned `INSUFFICIENT_CONTEXT`.
+
+The full eval hit the **free-tier embedding rate limit at question 11**, so I couldn't get final generation metrics yet. I also fixed a Windows `cp1252` encoding issue by using UTF-8 explicitly.
+
+One important thing I learned was that **retries and rate-limit pacing are different**. Retries help with temporary 429/503 failures, but repeated rate limits need delays between requests.
+
+## What surprised me
+
+I expected the retry logic to handle the rate-limit problem, but it didn't because the limit was sustained rather than temporary. It made me realize that a production RAG pipeline needs both **error recovery and request pacing**.

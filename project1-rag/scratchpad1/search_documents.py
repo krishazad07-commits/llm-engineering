@@ -2,6 +2,7 @@ import os
 
 import psycopg
 from dotenv import load_dotenv
+from gemini_generate import retry_on_transient
 from google import genai
 from google.genai import types
 from pgvector.psycopg import register_vector
@@ -15,7 +16,7 @@ EMBED_MODEL = "gemini-embedding-001"
 EMBED_DIM = 768
 TOP_K = 3
 
-
+@retry_on_transient
 def embed_query(client: genai.Client, query_text: str) -> list[float]:
     """Embed a user query with RETRIEVAL_QUERY task type, MRL-truncated to EMBED_DIM."""
     result = client.models.embed_content(
