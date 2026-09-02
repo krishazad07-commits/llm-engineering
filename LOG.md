@@ -252,3 +252,21 @@ One important thing I learned was that **retries and rate-limit pacing are diffe
 ## What surprised me
 
 I expected the retry logic to handle the rate-limit problem, but it didn't because the limit was sustained rather than temporary. It made me realize that a production RAG pipeline needs both **error recovery and request pacing**.
+
+**# Day 19 – Generation Eval + Quota Failure**
+
+**## What changed**
+
+Today I added **incremental JSONL writes with `flush()`** to `eval_generation.py` and added `time.sleep(4)` between questions to pace API requests. I also fixed the `load_golden_set()` file-opening bug.
+
+**## Problems / Findings**
+
+The full 50-question eval completed **20 questions successfully** before crashing at question 21 due to Gemini's **per-day generation quota**. All 20 completed answers were correctly attempted and cited.
+
+The incremental writes worked as intended: all **20 results were saved despite the crash**. I also learned that **per-minute and per-day quotas are different problems** — retries can help with temporary limits, but not a daily cap.
+
+**## What surprised me**
+
+The completed answers were strong: **q_005** correctly surfaced conflicting numerical values, and **q_017** performed arithmetic from retrieved data with citations.
+
+The partial result was **20/20 answerable attempts (100%)**, but no abstention rate could be measured because no unanswerable questions were reached.
