@@ -17,6 +17,7 @@ Writes per-question results to eval_generation_results.jsonl for later inspectio
 
 import json
 import os
+import time
 from pathlib import Path
 
 import psycopg
@@ -82,7 +83,7 @@ def did_abstain(answer: str) -> bool:
 # ---------------------------------------------------------------------------
 def load_golden_set(path: Path) -> list[dict]:
     """Load all questions from the JSONL file into a list of dicts."""
-    with open(path, encoding="utf-8") as f:   # ← added encoding
+    with open(path, encoding="utf-8") as f:   # ← add "as f"
         return [json.loads(line) for line in f]
 
 
@@ -118,8 +119,13 @@ def main() -> None:
 
     per_question_results = []
 
-    with psycopg.connect(DATABASE_URL) as conn:
+    # Open results file once so each question can be written immediately.
+    with (
+        open(RESULTS_PATH, "w", encoding="utf-8") as results_file,
+        psycopg.connect(DATABASE_URL) as conn,
+    ):
         register_vector(conn)
+    # ... rest of loop unchanged
 
         for i, q in enumerate(questions, start=1):
             question_text = q["question"]
@@ -174,9 +180,18 @@ def main() -> None:
                 }
             )
 
-    # ---------- Write per-question results ----------
-    with open(RESULTS_PATH, "w", encoding="utf-8") as f:   # ← added encoding
-        f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in per_question_results)   # ← added ensure_ascii=False
+            # Write each result immediately instead of waiting until the end.
+            results_file.write(
+                json.dumps(
+                    per_question_results[-1],
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            results_file.flush()
+
+            # Give the API a short pause between questions.
+            time.sleep(4)
 
     print(
         f"\nWrote {len(per_question_results)} results "
@@ -234,6 +249,9 @@ def main() -> None:
             f"Over-refusal IDs: "
             f"{[q['id'] for q in over_refusals]}"
         )
+
+    # Close the results file after all summary prints.
+    results_file.close()
 
 
 if __name__ == "__main__":
