@@ -24,6 +24,7 @@ DRAFT_PATH = Path(__file__).parent / "golden_qa_draft.jsonl"
 GOLDEN_PATH = Path(__file__).parent / "golden_qa.jsonl"
 REJECT_PATH = Path(__file__).parent / "rejections.jsonl"
 
+
 def load_reviewed_ids(golden_path: Path, reject_path: Path) -> set[str]:
     """Return the set of candidate IDs already decided (accepted or rejected)."""
     reviewed: set[str] = set()
@@ -37,6 +38,8 @@ def load_reviewed_ids(golden_path: Path, reject_path: Path) -> set[str]:
                         reviewed.add(record["id"])
 
     return reviewed
+
+
 def display_candidate(candidate: dict) -> None:
     """Print candidate fields in a readable format."""
 
@@ -58,7 +61,8 @@ def display_candidate(candidate: dict) -> None:
     print(f"  Difficulty : {candidate.get('difficulty', '')}")
     print(f"  Answerable : {candidate.get('answerable', '')}")
 
-    print("\n" + "-" * 80)   
+    print("\n" + "-" * 80)
+
 
 def get_decision() -> str:
     """Prompt for accept/edit/reject/skip/quit. Returns one of: a, e, r, s, q."""
@@ -79,18 +83,27 @@ def get_decision() -> str:
         # TODO 4: otherwise, print an error message and let the loop retry
         print("Invalid choice. Please enter a, e, r, s, or q.")
 
+
 def get_rejection_reason() -> str:
     """Prompt for a one-line rejection reason."""
     return input("Reason for rejection: ").strip()
+
 
 def load_drafts(path: Path) -> list[dict]:
     """Load all candidates from the draft JSONL file."""
     with path.open("r", encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
+
 def edit_candidate(candidate: dict) -> dict:
     """Let the user edit any field. Press enter on a field to keep its current value."""
-    editable_fields = ["question", "expected_answer", "relevant_chunk_hint", "category", "difficulty"]
+    editable_fields = [
+        "question",
+        "expected_answer",
+        "relevant_chunk_hint",
+        "category",
+        "difficulty",
+    ]
 
     for field in editable_fields:
         current = candidate.get(field, "")
@@ -99,6 +112,7 @@ def edit_candidate(candidate: dict) -> dict:
             candidate[field] = new_value
 
     return candidate
+
 
 def main():
     drafts = load_drafts(DRAFT_PATH)

@@ -14,6 +14,9 @@ from collections.abc import Callable
 
 from google import genai
 from google.genai import errors
+from groq import APIError as GroqAPIError
+from groq import Groq
+from groq import RateLimitError as GroqRateLimitError
 
 RETRYABLE_CODES = {429, 503}
 MAX_ATTEMPTS = 3
@@ -41,21 +44,29 @@ def retry_on_transient[T](fn: Callable[..., T]) -> Callable[..., T]:
                 # Call the wrapped function with all arguments.
                 return fn(*args, **kwargs)
 
-            except (errors.ClientError, errors.ServerError) as e:
+            except (
+                errors.ClientError,
+                errors.ServerError,
+                GroqAPIError,
+                GroqRateLimitError,
+            ) as e:
+                # Normalize error code across providers.
+                # Gemini errors use .code; Groq errors use .status_code.
+                code = getattr(e, "code", None) or getattr(e, "status_code", None)
+
                 # Only retry transient errors.
-                # Other errors such as 400 or authentication errors
-                # should immediately propagate to the caller.
-                if e.code not in RETRYABLE_CODES:
+                # Non-retryable errors (400, auth) propagate immediately.
+                if code not in RETRYABLE_CODES:
                     raise
 
                 last_error = e
 
                 # Exponential backoff: 5s, 15s, 45s.
-                wait = 5 * (3 ** attempt)
+                wait = 5 * (3**attempt)
 
                 print(
                     f"  [retry] {fn.__name__} attempt {attempt + 1} failed "
-                    f"(code {e.code}): waiting {wait}s"
+                    f"(code {code}): waiting {wait}s"
                 )
 
                 time.sleep(wait)
@@ -70,6 +81,8 @@ def retry_on_transient[T](fn: Callable[..., T]) -> Callable[..., T]:
 # ---------------------------------------------------------------------------
 # Convenience function for text generation — thin wrapper using the decorator
 # ---------------------------------------------------------------------------
+
+
 @retry_on_transient
 def generate_context(
     client: genai.Client,
@@ -96,3 +109,53 @@ def generate_context(
     )
 
     return response.text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Groq generation — provider swap for text generation
+# ---------------------------------------------------------------------------
+
+GROQ_MODEL = "openai/gpt-oss-120b"
+
+
+@retry_on_transient
+def generate_with_groq(
+    client: Groq,
+    prompt: str,
+    system_instruction: str | None = None,
+    model: str = GROQ_MODEL,
+) -> str:
+    """
+    Generate text via Groq/Llama. Provider-agnostic retry via @retry_on_transient.
+
+    Same interface shape as generate_context so callers can swap providers
+    by changing one function call, not their whole flow.
+    """
+
+    # Build messages list.
+    messages = []
+
+    if system_instruction is not None:
+        messages.append(
+            {
+                "role": "system",
+                "content": system_instruction,
+            }
+        )
+
+    messages.append(
+        {
+            "role": "user",
+            "content": prompt,
+        }
+    )
+
+    # Call Groq chat completion.
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0,
+    )
+
+    # Extract generated text.
+    return response.choices[0].message.content.strip()

@@ -270,3 +270,26 @@ The incremental writes worked as intended: all **20 results were saved despite t
 The completed answers were strong: **q_005** correctly surfaced conflicting numerical values, and **q_017** performed arithmetic from retrieved data with citations.
 
 The partial result was **20/20 answerable attempts (100%)**, but no abstention rate could be measured because no unanswerable questions were reached.
+
+# Day 20 – Batch Embedding + Groq Provider Swap
+
+## What changed
+
+Today I refactored `embed_query` into **`embed_query_batch`**, reducing 50 sequential embedding calls to **1 batched API call** while keeping the single-query function as a thin wrapper. I also extended `retry_on_transient` to handle both **Gemini and Groq errors**.
+
+I added `generate_with_groq()` and swapped generation to **Groq GPT-OSS-120B**, while keeping the existing `client` parameter so callers needed minimal changes. Both `sanity_generate.py` and `eval_generation.py` now use **Gemini for embedding + Groq for generation**.
+
+## Problems / Findings
+
+The full 50-question eval completed in **~90 seconds**, compared with 15+ minutes on the Gemini-only version that crashed at question 21.
+
+The final results were **8/8 unanswerables correctly abstained (100%)**, **34/42 answerables attempted (81%)**, **zero hallucinations**, and **8 over-refusals**: `q_016, q_022, q_032-q_037`.
+
+All 8 over-refusals were **compound multi-part questions**. Retrieval anchored on one sub-fact and missed the others, causing the model to correctly refuse instead of partially answering. This showed that **R@5=1.0 can hide compound-query failures** and that single-vector retrieval struggles with multi-part queries.
+
+## What surprised me
+
+GPT-OSS-120B consistently generated **CJK fullwidth brackets `【】` instead of `[]`** for citations, even with explicit instructions to use `[]`. This showed that some **model-family formatting behavior exists below the prompt layer**, so downstream citation parsing should accept both formats.
+
+The **provider swap was also very clean** because the retry wrapper was provider-agnostic and clients were passed through dependency injection. The migration took only ~15 lines across 4 files.
+

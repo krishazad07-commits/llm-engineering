@@ -53,8 +53,7 @@ def save_golden(path: Path, records: list[dict]) -> None:
 def is_scoreable(record: dict) -> bool:
     """Only answerable, non-table questions need chunk annotation."""
     return (
-        record.get("answerable") is True
-        and record.get("category") != "table_dependent"
+        record.get("answerable") is True and record.get("category") != "table_dependent"
     )
 
 
@@ -72,17 +71,14 @@ def display_candidates(chunks: list[tuple]) -> None:
     print("\nTop candidates:\n")
 
     for rank, chunk in enumerate(chunks, start=1):
-        chunk_id = chunk[0]      # DB primary key
+        chunk_id = chunk[0]  # DB primary key
         page = chunk[2]
         text = chunk[4]
         distance = chunk[5]
 
         preview = text.replace("\n", " ")[:PREVIEW_CHARS]
 
-        print(
-            f"[{rank:2}] id={chunk_id:<4} "
-            f"page={page:<2} dist={distance:.3f}"
-        )
+        print(f"[{rank:2}] id={chunk_id:<4} page={page:<2} dist={distance:.3f}")
         print(f"     {preview}")
         print()
 
@@ -146,9 +142,7 @@ def main() -> None:
             display_candidates(candidates)
 
             while True:
-                raw = input(
-                    "ids (comma-sep) / none / skip / quit: "
-                ).strip().lower()
+                raw = input("ids (comma-sep) / none / skip / quit: ").strip().lower()
 
                 try:
                     action, ids = parse_input(raw)

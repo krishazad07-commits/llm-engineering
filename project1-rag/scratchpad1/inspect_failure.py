@@ -71,7 +71,6 @@ def main():
         content,
         distance,
     ) in enumerate(retrieved, start=1):
-
         label = is_relevant(
             content,
             question["relevant_chunk_hint"],
@@ -79,11 +78,7 @@ def main():
 
         match = "[MATCH]" if label else "[no match]"
 
-        print(
-            f"#{rank} {match} "
-            f"page={page} "
-            f"distance={distance:.4f}"
-        )
+        print(f"#{rank} {match} page={page} distance={distance:.4f}")
         print(f"    {content[:250]}...")
         print()
 

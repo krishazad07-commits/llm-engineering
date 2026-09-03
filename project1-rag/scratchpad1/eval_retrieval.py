@@ -11,6 +11,7 @@ Writes: eval_results.jsonl (per-question metrics)
 Metrics computed: Recall@1, Recall@5, Recall@10, Precision@5, MRR, NDCG@10
                  Chunk Coverage@5, Chunk Coverage@10
 """
+
 import argparse
 import json
 import math
@@ -92,10 +93,7 @@ def is_relevant(chunk: tuple, record: dict) -> bool:
 
     cleaned = PAGE_MARKER.sub("", hint)
 
-    segments = [
-        seg.strip().strip('"').strip("'")
-        for seg in cleaned.split(";")
-    ]
+    segments = [seg.strip().strip('"').strip("'") for seg in cleaned.split(";")]
 
     segments = [seg for seg in segments if seg]
 
@@ -138,10 +136,7 @@ def label_ranking(
     record: dict,
 ) -> list[bool]:
     """Label each retrieved chunk as relevant or not, preserving ranking order."""
-    return [
-        is_relevant(chunk, record)
-        for chunk in retrieved_chunks
-    ]
+    return [is_relevant(chunk, record) for chunk in retrieved_chunks]
 
 
 def recall_at_k(labels: list[bool], k: int) -> float:
@@ -239,10 +234,7 @@ def report(results: list[dict]) -> None:
             print(f"{key}: {avg(category_results, key):.3f}")
 
     # Exclusions
-    print(
-        "\nExcluded: 8 unanswerable, 5 table_dependent "
-        "(see LOG for reasons)"
-    )
+    print("\nExcluded: 8 unanswerable, 5 table_dependent (see LOG for reasons)")
 
 
 def main():
@@ -255,16 +247,13 @@ def main():
         choices=["vector", "hybrid", "reranked", "contextual"],
         default="vector",
         help="Which retriever to evaluate.",
-        
     )
     args = parser.parse_args()
 
     print(f"\n=== Running eval with retriever: {args.retriever} ===\n")
 
     # Write results to a separate file for each retriever
-    results_path = Path(__file__).parent / (
-        f"eval_results_{args.retriever}.jsonl"
-    )
+    results_path = Path(__file__).parent / (f"eval_results_{args.retriever}.jsonl")
 
     # Check required environment variables
     if not GOOGLE_API_KEY:
@@ -291,7 +280,6 @@ def main():
         bm25, chunks = build_bm25_index(conn)
 
         for i, q in enumerate(questions, start=1):
-
             # Retrieve top-k chunks using the selected retriever
             if args.retriever == "vector":
                 retrieved = retrieve(

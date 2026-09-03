@@ -11,19 +11,26 @@ import psycopg
 from dotenv import load_dotenv
 from generate_answer import RetrievedChunk, generate_answer
 from google import genai
+from groq import Groq
 from pgvector.psycopg import register_vector
 from search_documents import retrieve
 
 load_dotenv()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 client = genai.Client(api_key=GOOGLE_API_KEY)
-
+groq_client = Groq(api_key=GROQ_API_KEY)
+if not GROQ_API_KEY:
+    raise RuntimeError("GROQ_API_KEY not set in .env")
 QUESTIONS = [
-    ("ANSWERABLE",   "On what date did Berkshire's Japanese purchases begin?"),
-    ("UNANSWERABLE", "What specific university did Ajit Jain attend for his undergraduate education in India?"),
+    ("ANSWERABLE", "On what date did Berkshire's Japanese purchases begin?"),
+    (
+        "UNANSWERABLE",
+        "What specific university did Ajit Jain attend for his undergraduate education in India?",
+    ),
 ]
 
 
@@ -40,13 +47,15 @@ def to_retrieved_chunks(raw_rows: list[tuple]) -> list[RetrievedChunk]:
     chunks = []
     for row in raw_rows:
         _doc_id, source, page, chunk_id, content, distance = row
-        chunks.append(RetrievedChunk(
-            chunk_id=str(chunk_id),
-            source_doc=source,
-            page=page,
-            content=content,
-            similarity=1 - distance,
-        ))
+        chunks.append(
+            RetrievedChunk(
+                chunk_id=str(chunk_id),
+                source_doc=source,
+                page=page,
+                content=content,
+                similarity=1 - distance,
+            )
+        )
     return chunks
 
 
@@ -61,10 +70,12 @@ with psycopg.connect(DATABASE_URL) as conn:
         raw = retrieve(client, conn, question, k=5)
         chunks = to_retrieved_chunks(raw)
 
-        print(f"\nRetrieved {len(chunks)} chunks. Top chunk id: "
-              f"{chunks[0].source_doc}:p{chunks[0].page}:c{chunks[0].chunk_id}\n")
+        print(
+            f"\nRetrieved {len(chunks)} chunks. Top chunk id: "
+            f"{chunks[0].source_doc}:p{chunks[0].page}:c{chunks[0].chunk_id}\n"
+        )
 
-        answer = generate_answer(client, question, chunks)
+        answer = generate_answer(groq_client, question, chunks)
 
         print("ANSWER:")
         print(answer)

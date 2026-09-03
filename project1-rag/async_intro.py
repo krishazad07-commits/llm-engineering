@@ -1,22 +1,27 @@
 import asyncio
 
 
-async def greet()->str:
-    return"Herllo, World!"
+async def greet() -> str:
+    return "Herllo, World!"
+
 
 async def main():
-    result= await greet()
+    result = await greet()
     print(result)
 
+
 asyncio.run(main())
+
 
 async def slow_task() -> str:
     print("Task started")
     return "done"
 
+
 async def main() -> None:
     result = await slow_task()  # NOW it runs
     print(result)
+
 
 asyncio.run(main())
 
@@ -54,5 +59,5 @@ async def run_concurrent() -> None:
 
 
 asyncio.run(run_sequential())
-print("\n" + "="*40 + "\n")
+print("\n" + "=" * 40 + "\n")
 asyncio.run(run_concurrent())

@@ -101,9 +101,9 @@ def main():
         print(f"Loaded {len(rows)} rows pending embedding")
 
         # Process in batches
-                # Process in batches
+        # Process in batches
         for batch_start in range(0, len(rows), BATCH_SIZE):
-            batch = rows[batch_start:batch_start + BATCH_SIZE]
+            batch = rows[batch_start : batch_start + BATCH_SIZE]
 
             # Build situated texts for this batch
             texts = [
@@ -126,11 +126,7 @@ def main():
             ):
                 update_embedding(conn, row_id, emb)
 
-            print(
-                f"  ✓ Batch done. "
-                f"{batch_start + len(batch)}/{len(rows)}"
-            )
-
+            print(f"  ✓ Batch done. {batch_start + len(batch)}/{len(rows)}")
 
     print("\n✓ All embeddings written.")
 

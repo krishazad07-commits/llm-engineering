@@ -186,9 +186,8 @@ def main():
             )
 
             # Rate-limit spacing.
-                        # Rate-limit spacing.
+            # Rate-limit spacing.
             time.sleep(SLEEP_BETWEEN_CALLS)
-
 
     print("\n✓ All chunks processed.")
 

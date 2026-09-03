@@ -2,11 +2,12 @@ from pydantic import BaseModel, ValidationError
 
 
 class User(BaseModel):
-    name:str
-    age:int
-    email:str| None=None
+    name: str
+    age: int
+    email: str | None = None
 
-user1= User(name="Krish",age=22,email=None)
+
+user1 = User(name="Krish", age=22, email=None)
 print(user1)
 print(f"name:{user1.name}")
 print(f"age:{user1.age}")

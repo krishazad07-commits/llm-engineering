@@ -16,19 +16,41 @@ EMBED_MODEL = "gemini-embedding-001"
 EMBED_DIM = 768
 TOP_K = 3
 
+
 @retry_on_transient
-def embed_query(client: genai.Client, query_text: str) -> list[float]:
-    """Embed a user query with RETRIEVAL_QUERY task type, MRL-truncated to EMBED_DIM."""
+def embed_query_batch(
+    client: genai.Client,
+    queries: list[str],
+) -> list[list[float]]:
+    """
+    Embed a list of user queries in ONE API call with RETRIEVAL_QUERY task type.
+    Each embedding is MRL-truncated to EMBED_DIM.
+
+    Returns a list of vectors in the SAME ORDER as the input queries.
+    """
     result = client.models.embed_content(
         model=EMBED_MODEL,
-        contents=[query_text],
+        contents=queries,
         config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY"),
     )
-    vector = result.embeddings[0].values[:EMBED_DIM]
-    assert len(vector) == EMBED_DIM, (
-        f"Embedding dim mismatch: expected {EMBED_DIM}, got {len(vector)}"
+
+    vectors = [embedding.values[:EMBED_DIM] for embedding in result.embeddings]
+
+    assert all(len(v) == EMBED_DIM for v in vectors), (
+        f"Embedding dim mismatch on batch of {len(queries)}"
     )
-    return vector
+
+    return vectors
+
+
+def embed_query(client: genai.Client, query_text: str) -> list[float]:
+    """
+    Convenience wrapper: embed a single query.
+
+    Thin wrapper over embed_query_batch so single-query and batch-query
+    callers share the same underlying logic and retry behavior.
+    """
+    return embed_query_batch(client, [query_text])[0]
 
 
 def search(conn: psycopg.Connection, query_vector: list[float], k: int):
@@ -45,7 +67,8 @@ def search(conn: psycopg.Connection, query_vector: list[float], k: int):
             (query_vector, k),
         )
         return cur.fetchall()
-    
+
+
 def retrieve(
     client: genai.Client,
     conn: psycopg.Connection,
@@ -54,12 +77,13 @@ def retrieve(
 ) -> list[tuple]:
     """Embed a query and return top-k chunks from the DB. Caller owns client + conn lifecycle."""
     # TODO 1: embed the query using embed_query()
-    query_vector = embed_query(client,query)
+    query_vector = embed_query(client, query)
 
     # TODO 2: call search() with the vector and k
-    results  = search(conn,query_vector,k)
+    results = search(conn, query_vector, k)
     # TODO 3: return the results
     return results
+
 
 def main():
     if not GOOGLE_API_KEY:

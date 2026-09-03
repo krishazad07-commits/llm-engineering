@@ -14,6 +14,7 @@ def tokenize(text: str) -> list[str]:
     # TODO 1: return lowercased whitespace-split words
     return text.lower().split()
 
+
 def build_bm25_index(conn: psycopg.Connection) -> tuple[BM25Okapi, list[tuple]]:
     """Load all chunks from the DB, tokenize, and build a BM25 index.
 
@@ -27,6 +28,7 @@ def build_bm25_index(conn: psycopg.Connection) -> tuple[BM25Okapi, list[tuple]]:
     tokenized_docs = [tokenize(row[4]) for row in chunks]
     bm25_index = BM25Okapi(tokenized_docs)
     return bm25_index, chunks
+
 
 def search_bm25(
     query: str,
@@ -47,7 +49,8 @@ def search_bm25(
     ranked = sorted(paired, key=lambda x: x[1], reverse=True)
     # TODO 5: take the first k, return just the chunk tuples (drop the score)
     #         hint: a list comprehension over the top-k slice
-    return [chunk for chunk,score in ranked[:k]]
+    return [chunk for chunk, score in ranked[:k]]
+
 
 def rrf_fuse(
     vector_results: list[tuple],
@@ -80,10 +83,8 @@ def rrf_fuse(
         reverse=True,
     )
 
-    return [
-        chunk_lookup[chunk_id]
-        for chunk_id, score in ranked_ids[:top_n]
-    ]
+    return [chunk_lookup[chunk_id] for chunk_id, score in ranked_ids[:top_n]]
+
 
 def retrieve_hybrid(
     client,
@@ -96,14 +97,10 @@ def retrieve_hybrid(
     """Hybrid retrieval: vector search + BM25, fused via RRF. Returns top-k chunk tuples."""
     # TODO 1: call retrieve() from search_documents (vector search)
     #         retrieve(client, conn, query, k)
-    vector_results = retrieve(client, conn, query, k)   
+    vector_results = retrieve(client, conn, query, k)
     # TODO 2: call search_bm25(query, bm25_index, chunks, k)
     bm25_results = search_bm25(query, bm25_index, chunks, k)
     # TODO 3: call rrf_fuse(vector_results, bm25_results, top_n=k)
-    fused_chunks = rrf_fuse(
-        vector_results,
-        bm25_results,
-        top_n = k
-    )
+    fused_chunks = rrf_fuse(vector_results, bm25_results, top_n=k)
     # TODO 4: return the fused result
     return fused_chunks
