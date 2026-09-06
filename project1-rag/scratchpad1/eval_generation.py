@@ -1,5 +1,4 @@
-"""
-eval_generation.py — measures the generation half of the pipeline.
+"""eval_generation.py — measures the generation half of the pipeline.
 
 BATCH-OPTIMIZED VERSION:
   - Embeds all queries upfront in one API call (10× faster, no per-min rate limits)
@@ -13,7 +12,7 @@ from pathlib import Path
 
 import psycopg
 from dotenv import load_dotenv
-from generate_answer import RetrievedChunk, generate_answer
+from generate_answer import generate_answer, to_retrieved_chunks
 from google import genai
 from groq import Groq
 from pgvector.psycopg import register_vector
@@ -27,28 +26,13 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GOLDEN_SET_PATH = Path("golden_qa.jsonl")
 RESULTS_PATH = Path("eval_generation_results.jsonl")
 
-TOP_K = 5
+TOP_K = 15
 ABSTENTION_TOKEN = "INSUFFICIENT_CONTEXT"
 
 
 # ---------------------------------------------------------------------------
 # Same as before — no changes
 # ---------------------------------------------------------------------------
-def to_retrieved_chunks(raw_rows: list[tuple]) -> list[RetrievedChunk]:
-    """Map retriever tuples to RetrievedChunk dataclasses."""
-    chunks = []
-    for row in raw_rows:
-        _doc_id, source, page, chunk_id, content, distance = row
-        chunks.append(
-            RetrievedChunk(
-                chunk_id=str(chunk_id),
-                source_doc=source,
-                page=page,
-                content=content,
-                similarity=1 - distance,
-            )
-        )
-    return chunks
 
 
 def did_abstain(answer: str) -> bool:
@@ -144,6 +128,15 @@ def main() -> None:
                     "answerable": is_answerable,
                     "abstained": abstained,
                     "answer": answer,
+                    "retrieved_db_ids": [chunk.db_id for chunk in chunks],
+                    "retrieved_keys": [
+                        f"{chunk.source_doc}:p{chunk.page}:c{chunk.chunk_id}"
+                        for chunk in chunks
+                    ],
+                    "retrieved_scores": [
+                        round(chunk.similarity, 3)
+                        for chunk in chunks
+                    ],
                 }
             )
 
