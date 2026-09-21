@@ -293,3 +293,52 @@ GPT-OSS-120B consistently generated **CJK fullwidth brackets `【】` instead of
 
 The **provider swap was also very clean** because the retry wrapper was provider-agnostic and clients were passed through dependency injection. The migration took only ~15 lines across 4 files.
 
+
+# Day 21 – Partial Answers + Retrieval Observability
+
+## What changed
+
+Added `retrieved_db_ids`, `retrieved_keys`, and `retrieved_scores` to eval rows after debugging lacked retrieval visibility. Caught a `chunk_id` naming collision between page position and DB primary key; added `db_id` to `RetrievedChunk`.
+
+Fixed the doubled `- -` system-prompt typo; q_016 flipped from refusal → correct with no retrieval change. Added three few-shot examples for full, partial, and abstained answers.
+
+## Numerical results
+
+**Attempts:** 34/42 → **41/42** (81% → 97.6%)  
+**Abstention:** 8/8 held | **Hallucinations:** 0 held  
+**Failures:** 6 partials fixed (q_032–037), q_022 remains.
+
+## What surprised me
+
+q_016 flipping from refusal → correct from a prompt typo alone, with retrieval unchanged.
+
+## Day 21 summary
+
+Prompt-only patch + observability upgrade took over-refusals from **8 → 1**.  
+Groq 200K TPD cap hit during the q_022 TOP_K=15 experiment; deferred to Day 22.
+
+
+# Day 22 – TOP_K Retrieval Test
+
+## What changed
+
+Bumped `TOP_K` from 5 → 15 to test whether q_022's refusal was caused by retrieval. Groq hit a 429 at Q27, but q_022 was already completed.
+
+## Numerical results
+
+**q_022:** chunk 63 returned at **rank 6** with **score 0.647**.  
+**Answer:** **38 years**, fully cited with the arithmetic shown.
+
+## What surprised me
+
+Day 17's **R@5 = R@10** finding did not generalize to this multi-hop query: the missing evidence was sitting at **rank 6**.
+
+**TOP_K=15:** ~**200K tokens burned in 26 questions**.
+
+## Day 23 (Sep 21) — Refresh day after 14-day gap; TOP_K=15 full-eval confirmed
+
+**What changed:** No new code. Refresh session after 14 days off the project (Sep 7 → Sep 21). Supabase project had paused itself on free tier — resumed via dashboard, connection restored on first retry. Re-ran `eval_generation.py` end-to-end at TOP_K=15 to confirm nothing rotted in the gap. Started TOP_K=10 sanity run but hit Groq TPD cap mid-way (197756/200000 used across two runs).
+
+**Numbers:** First full 50-question eval at TOP_K=15 completed cleanly: **42/42 answerables attempted (100%), 8/8 abstentions held, 0 hallucinations, 0 over-refusals.** This is the full-set confirmation of Day 22's partial result — q_022 no longer refuses. TOP_K=10 comparison run: died at Q3 after two Groq 429 retries (5s → 15s → 45s backoff), then hard-failed on TPD cap. TOP_K=10 result deferred to Day 24.
+
+**What surprised me:** Two things. (1) Supabase's free-tier auto-pause is real and silent — no email, no warning, just a "tenant not found" error when you connect. Cost me nothing this time because the resume was instant, but if this were a client demo it would have been embarrassing. Worth remembering for anything production-facing. (2) 200K TPD burns faster than I intuited — one 50-question eval + a 3-question partial got me to 99% of the daily cap. Project 2 (agent) will burn more tokens per task than RAG does per query, so the eval strategy for Week 4 needs Anthropic credit or Groq Dev Tier or day-spacing. Better to plan for it now than hit it mid-eval on Sep 30.
