@@ -350,3 +350,28 @@ Day 17's **R@5 = R@10** finding did not generalize to this multi-hop query: the 
 **Numbers:** TOP_K=10 result identical to TOP_K=15: **42/42 answerables attempted (100%), 8/8 abstentions held, 0 hallucinations, 0 over-refusals.** Per-question verification on q_022 (the Day 22 canary): chunk 63 retrieved at **rank 6** (`retrieved_db_ids = [57, 58, 59, 43, 34, 63, 44, 35, 55, 24]`), same rank as under TOP_K=15. q_022 answered correctly, did not abstain. Locked TOP_K=10 as the shipped default — same quality as 15, 33% fewer retrieval tokens per query.
 
 **What surprised me:** Nothing dramatic — the result matched the prediction. What's worth naming: at TOP_K=10, the critical chunk sits at rank 6, giving a 4-rank margin against failure. TOP_K=5 (the roadmap default) would drop it entirely. If the corpus or query distribution shifted and the worst-case rank drifted from 6 to 11+, TOP_K=10 would silently start refusing questions again. Not a problem today; a fact worth capturing in the README so the choice is defensible, not lucky.
+
+## Day 24 (Sep 22) — TOP_K=10 shipped; retrieval eval consolidation reveals per-category retriever specialisation
+
+**What changed:** Three things. (1) Ran TOP_K=10 sanity test — full 50-question eval, identical result to TOP_K=15: 42/42 answerables attempted, 8/8 abstentions held, 0 hallucinations. Shipped TOP_K=10 as the default, saving 33% retrieval tokens per query with no measurable quality loss. Per-question verification on q_022 (the Day 22 canary): chunk 63 retrieved at rank 6, same rank as under TOP_K=15. (2) Built `consolidate_retrieval_evals.py` — pure aggregation script over the three per-retriever JSONL files from Days 15/16/17. Prints overall + per-category tables. (3) Added TOP_K to `RESULTS_PATH` filename so future eval runs don't overwrite each other.
+
+**Numbers — overall retrieval (n=37 scoreable questions):**
+
+| Retriever  | Recall@1 | MRR   | NDCG@10 | Coverage@5 |
+|------------|---------:|------:|--------:|-----------:|
+| Vector     |    0.757 | 0.855 |   0.891 |      0.950 |
+| Reranked   |    0.784 | 0.879 |   0.910 |      0.973 |
+| Contextual |    0.784 | 0.863 |   0.897 |      0.977 |
+
+Recall@5 = Recall@10 = 1.000 across all three retrievers under the fixed labeler — retrieval finds the right chunk within top-5 every time; the differences are ranking-quality, not retrieval-completeness. The aggregate +0.027 Recall@1 improvement from reranker and contextual (identical at the aggregate level) hides the fact that they win on different question types.
+
+**Per-category story (this is the real finding):**
+
+- **Extractive (n=17):** All three retrievers tie at Recall@1 = 0.765. Ceiling reached. Nothing to improve with these techniques on a corpus this size.
+- **Partial (n=6):** Vector 0.667 → reranker 0.833 (+0.166), contextual 0.833 (+0.166). Both help identically. The reranker's aggregate Recall@1 gain comes almost entirely from this category.
+- **Inferential (n=6):** Reranker holds vector's 0.833; contextual *drops* to 0.667 (−0.167). Prepended narrative context adds topical noise to reasoning-shaped queries that lack clear keyword hooks.
+- **Multi-hop (n=8):** Reranker holds vector's 0.750; contextual *rises* to 0.875 (+0.125). Multi-hop needs scattered facts recognised as part of the same reasoning chain — contextual retrieval's summary sentence helps the retriever cluster related chunks.
+
+**BM25 status:** Deferred, not skipped. Day 13's hybrid experiment was confounded by a labeler bug (Day 14 fix); by the time the labeler was clean, vector-only was hitting Recall@10 = 1.000 on the single-doc corpus, leaving nothing for BM25 to catch. On prose corpora with semantic queries, BM25 doesn't have a job. It becomes essential once the multi-doc extension lands, where exact-token queries (document names, section references, proper nouns) will genuinely need it. Multi-doc is Project 4, post-Oct 5, and hybrid retrieval is a first-class citizen of that architecture from day one.
+
+**What surprised me:** Day 17 speculated that reranker and contextual "aren't really competitors, could probably stack them" — this consolidation is the evidence. Reranker's win is concentrated in the partial category (+0.166); contextual's win is concentrated in multi-hop (+0.125); they hurt/help different categories, so their improvements are additive rather than overlapping. That's a testable hypothesis for post-interview experimentation — stack them, expect the aggregate Recall@1 to move above either alone. Also worth naming: chunk 63 for q_022 sits at rank 6, so TOP_K=10 has a 4-rank margin against the observed worst-case retrieval depth. Not "safe forever" — safe against the failure modes measured, with 4 ranks of slack.
