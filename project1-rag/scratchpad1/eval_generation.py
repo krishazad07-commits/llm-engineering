@@ -26,7 +26,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GOLDEN_SET_PATH = Path("golden_qa.jsonl")
 RESULTS_PATH = Path("eval_generation_results.jsonl")
 
-TOP_K = 15
+TOP_K = 10
 ABSTENTION_TOKEN = "INSUFFICIENT_CONTEXT"
 
 
