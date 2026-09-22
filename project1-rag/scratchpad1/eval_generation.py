@@ -24,9 +24,8 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GOLDEN_SET_PATH = Path("golden_qa.jsonl")
-RESULTS_PATH = Path("eval_generation_results.jsonl")
-
 TOP_K = 10
+RESULTS_PATH = Path(f"eval_generation_results_topk{TOP_K}.jsonl")
 ABSTENTION_TOKEN = "INSUFFICIENT_CONTEXT"
 
 
