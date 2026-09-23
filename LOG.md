@@ -375,3 +375,40 @@ Recall@5 = Recall@10 = 1.000 across all three retrievers under the fixed labeler
 **BM25 status:** Deferred, not skipped. Day 13's hybrid experiment was confounded by a labeler bug (Day 14 fix); by the time the labeler was clean, vector-only was hitting Recall@10 = 1.000 on the single-doc corpus, leaving nothing for BM25 to catch. On prose corpora with semantic queries, BM25 doesn't have a job. It becomes essential once the multi-doc extension lands, where exact-token queries (document names, section references, proper nouns) will genuinely need it. Multi-doc is Project 4, post-Oct 5, and hybrid retrieval is a first-class citizen of that architecture from day one.
 
 **What surprised me:** Day 17 speculated that reranker and contextual "aren't really competitors, could probably stack them" — this consolidation is the evidence. Reranker's win is concentrated in the partial category (+0.166); contextual's win is concentrated in multi-hop (+0.125); they hurt/help different categories, so their improvements are additive rather than overlapping. That's a testable hypothesis for post-interview experimentation — stack them, expect the aggregate Recall@1 to move above either alone. Also worth naming: chunk 63 for q_022 sits at rank 6, so TOP_K=10 has a 4-rank margin against the observed worst-case retrieval depth. Not "safe forever" — safe against the failure modes measured, with 4 ranks of slack.
+
+Day 25 — Sep 23, 2026 — Project 2: DB + First 2 Tools
+Predictions
+
+* “GrubMatch’s most recent invoice” → ~3 steps
+* First failure → likely wrong tool arguments
+* Groq handles tool use → yes
+(Agent itself not tested yet.)
+
+Built / Changed
+
+* Set up fresh Supabase project with 20 customers, 100 invoices, 30 tickets
+* Added edge cases: ZeroBill (0 invoices) + similar customer names
+* Created `project2-agent/` with uv, psycopg, dotenv, Groq
+* Built Drawer 1: `find_customer()`
+   * Case-insensitive substring search on name/email
+   * Returns list of dicts
+   * Added empty/whitespace validation after `%%` matched every customer
+* Built Drawer 2: `get_invoice()`
+   * Fetches invoice + customer name using JOIN
+   * Validates positive integer ID
+   * Handles missing invoices with `InvoiceNotFoundError`
+   * Converts DB types to JSON-friendly values
+
+Results
+
+* DB counts confirmed: 20 / 100 / 30
+* Zero-invoice customer verified
+* Drawer 1: 7/7 tests passed
+* Drawer 2: 4/4 tests passed
+* Total: 11/11 tool tests passed
+
+What surprised me
+
+* Empty-string search silently becomes `%%` and can return the whole table.
+* Tool output needs deliberate handling of PostgreSQL types like `Decimal`, `date`, and `datetime`.
+* A lot of agent building is actually careful DB, input validation, and serialization work.
