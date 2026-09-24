@@ -125,6 +125,60 @@ def get_invoice(invoice_id: int) -> dict[str, Any]:
         "issued_at": row[6].isoformat(),
     }
 
+class CustomerNotFoundError(Exception):
+    """Raised when list_customer_invoices is called with a customer_id that doesn't exist."""
+    pass
+
+
+def list_customer_invoices(customer_id: int) -> list[dict[str, Any]]:
+    """
+    List all invoices for a given customer, newest first.
+    """
+
+    # TODO 1: input validation
+    if not isinstance(customer_id, int) or isinstance(customer_id, bool) or customer_id <= 0:
+        raise ValueError("customer_id must be a positive integer")
+
+    # TODO 2 & 3: check customer exists, then fetch invoices
+    with psycopg.connect(DB_URL) as conn:
+        with conn.cursor() as cur:
+
+            # Check whether customer exists
+            cur.execute(
+                "SELECT 1 FROM customers WHERE id = %s LIMIT 1",
+                (customer_id,)
+            )
+
+            if cur.fetchone() is None:
+                raise CustomerNotFoundError(
+                    f"Customer with id {customer_id} does not exist"
+                )
+
+            # Fetch customer's invoices, newest first
+            cur.execute(
+                """
+                SELECT id, amount, status, due_date, issued_at
+                FROM invoices
+                WHERE customer_id = %s
+                ORDER BY issued_at DESC
+                """,
+                (customer_id,)
+            )
+
+            rows = cur.fetchall()
+
+    # TODO 4: convert rows to dictionaries
+    return [
+        {
+            "id": row[0],
+            "amount": float(row[1]),
+            "status": row[2],
+            "due_date": row[3].isoformat() if row[3] else None,
+            "issued_at": row[4].isoformat() if row[4] else None,
+        }
+        for row in rows
+    ]
+
 if __name__ == "__main__":
     # Manual smoke tests
     # Run:
@@ -180,6 +234,29 @@ if __name__ == "__main__":
     print("Test 11 — zero or negative (should raise ValueError):")
     try:
         get_invoice(-1)
+        print("  FAIL: did not raise")
+    except ValueError as e:
+        print(f"  PASS: raised: {e}")
+        print("\n--- Drawer 3: list_customer_invoices ---")
+
+    print("Test 12 — customer with many invoices (GrubMatch, id 3, should return 16):")
+    invoices = list_customer_invoices(3)
+    print(f"  Got {len(invoices)} invoices")
+    print(f"  Most recent: {invoices[0]}")   # should be invoice id 16, ₹2450, overdue
+
+    print("Test 13 — customer with zero invoices (ZeroBill, id 20, should return []):")
+    print(f"  {list_customer_invoices(20)}")
+
+    print("Test 14 — nonexistent customer (should raise CustomerNotFoundError):")
+    try:
+        list_customer_invoices(999999)
+        print("  FAIL: did not raise")
+    except CustomerNotFoundError as e:
+        print(f"  PASS: raised: {e}")
+
+    print("Test 15 — invalid input (should raise ValueError):")
+    try:
+        list_customer_invoices("not an int")
         print("  FAIL: did not raise")
     except ValueError as e:
         print(f"  PASS: raised: {e}")
