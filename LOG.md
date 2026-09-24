@@ -376,7 +376,7 @@ Recall@5 = Recall@10 = 1.000 across all three retrievers under the fixed labeler
 
 **What surprised me:** Day 17 speculated that reranker and contextual "aren't really competitors, could probably stack them" — this consolidation is the evidence. Reranker's win is concentrated in the partial category (+0.166); contextual's win is concentrated in multi-hop (+0.125); they hurt/help different categories, so their improvements are additive rather than overlapping. That's a testable hypothesis for post-interview experimentation — stack them, expect the aggregate Recall@1 to move above either alone. Also worth naming: chunk 63 for q_022 sits at rank 6, so TOP_K=10 has a 4-rank margin against the observed worst-case retrieval depth. Not "safe forever" — safe against the failure modes measured, with 4 ranks of slack.
 
-Day 25 — Sep 23, 2026 — Project 2: DB + First 2 Tools
+## Day 25 — Sep 23, 2026 — Project 2: DB + First 2 Tools
 Predictions
 
 * “GrubMatch’s most recent invoice” → ~3 steps
@@ -412,3 +412,26 @@ What surprised me
 * Empty-string search silently becomes `%%` and can return the whole table.
 * Tool output needs deliberate handling of PostgreSQL types like `Decimal`, `date`, and `datetime`.
 * A lot of agent building is actually careful DB, input validation, and serialization work.
+
+## Day 26 — Sep 24, 2026 — Drawer 3 + first working agent
+
+**Predictions vs actuals:**
+- Steps for GrubMatch task: predicted 3 / actual 3 ✓
+- What breaks first: predicted wrong args / actual nothing broke (happy path untested for failures)
+- Groq handles tool use: predicted yes / actual yes ✓
+
+**Built / changed:**
+- [Drawer 3 details]
+- [Tool schemas — what you learned writing them, especially the "when NOT to use" pattern]
+- [Agent loop — the four message types, tool_call_id matching]
+
+**Numerical results:**
+- 15/15 tool tests still pass
+- Agent completed GrubMatch task in 3 steps, correct answer (invoice 16, ₹2450, overdue)
+- Rough token cost: [your estimate if you looked, or skip]
+
+**What surprised me:**
+- What surprised me: Nothing broke. I expected wrong-args or a tool-selection mistake, and got a clean 3-step chain. But the task was also the easiest possible one — unambiguous customer name, no edge cases — so this doesn't prove the agent is robust, just that the happy path works. Day 27 (deliberate breakage) is where the real test starts.
+
+**Time cost (honest):**
+- 1 hour
