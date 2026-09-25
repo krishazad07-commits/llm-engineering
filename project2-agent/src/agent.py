@@ -1,7 +1,7 @@
 """
 Agent loop — the Day 1 hand-rolled version.
 
-Takes a user question, sends it to Groq with our three tool schemas,
+Takes a user question, sends it to Groq with our six tool schemas,
 runs any tools Groq asks for, feeds results back, repeats until Groq
 returns a final text answer or MAX_STEPS is hit.
 """
@@ -13,7 +13,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 from groq import Groq
 
-from tools import find_customer, get_invoice, list_customer_invoices
+from tools import (
+    find_customer,
+    get_invoice,
+    list_customer_invoices,
+    get_customer,
+    search_invoices,
+    list_customer_tickets,
+)
 from tool_schemas import ALL_TOOLS
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent.parent / ".env")
@@ -27,6 +34,9 @@ TOOL_REGISTRY = {
     "find_customer": find_customer,
     "get_invoice": get_invoice,
     "list_customer_invoices": list_customer_invoices,
+    "get_customer": get_customer,
+    "search_invoices": search_invoices,
+    "list_customer_tickets": list_customer_tickets,
 }
 
 SYSTEM_PROMPT = (
@@ -45,19 +55,17 @@ def run_tool(name: str, arguments: dict) -> str:
     Errors are caught and returned as strings so the LLM can see them and self-correct.
     """
     try:
-        # TODO 1: look up the function in TOOL_REGISTRY by name
         fn = TOOL_REGISTRY.get(name)
 
-        # TODO 2: if the tool name isn't in the registry, return an error string
-        # (LLMs occasionally hallucinate tool names)
+        # LLMs occasionally hallucinate tool names
         if fn is None:
             return f"Error: unknown tool '{name}'"
 
-        # TODO 3: call the function by unpacking the arguments dict.
+        # Call the function by unpacking the arguments dict.
         # Example: {"query": "GrubMatch"} → fn(query="GrubMatch")
         result = fn(**arguments)
 
-        # TODO 4: serialize the result to a JSON string so we can send it back as tool content
+        # Serialize the result to a JSON string so we can send it back as tool content
         return json.dumps(result)
 
     except Exception as e:
@@ -78,7 +86,6 @@ def run_agent(question: str, verbose: bool = True) -> str:
         if verbose:
             print(f"\n--- Step {step + 1} ---")
 
-        # TODO 5: call Groq. Pass model, messages, and tools=ALL_TOOLS.
         response = client.chat.completions.create(
             model=MODEL,
             messages=messages,
@@ -90,14 +97,13 @@ def run_agent(question: str, verbose: bool = True) -> str:
         # Groq returns a Pydantic-like object; convert to dict for consistency.
         messages.append(msg.model_dump(exclude_none=True))
 
-        # TODO 6: check if the LLM wants to call tools.
         # If msg.tool_calls is None or empty, we're done — return msg.content.
         if not msg.tool_calls:
             if verbose:
                 print(f"Final answer: {msg.content}")
             return msg.content
 
-        # TODO 7: for each tool call, run it and append the result as a "tool" message.
+        # For each tool call, run it and append the result as a "tool" message.
         # Each tool result MUST include tool_call_id matching the one the LLM sent.
         for tool_call in msg.tool_calls:
             name = tool_call.function.name
@@ -124,7 +130,9 @@ def run_agent(question: str, verbose: bool = True) -> str:
 
 
 if __name__ == "__main__":
-    # The test task — same one you predicted 3 steps for
-    question = "What is GrubMatch Foods' most recent invoice?"
+    # Sanity check: routes cleanly to get_customer(1) when the ID is
+    # given directly. Used to confirm the six-tool setup still works
+    # after restoring descriptions.
+    question = "What's the email of customer 1?"
     answer = run_agent(question)
     print(f"\n=== FINAL ===\n{answer}")

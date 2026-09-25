@@ -435,3 +435,155 @@ What surprised me
 
 **Time cost (honest):**
 - 1 hour
+
+
+## Day 27 — Sep 25 — Deliberately break tool selection
+
+### Setup
+- Adding 3 new tools: get_customer(id), search_invoices(filter), list_customer_tickets(id)
+- Deliberately generic descriptions on get_customer ("Get customer information")
+  and search_invoices ("Search invoices") — no "when NOT to use", no distinction
+  from their overlap partner
+- list_customer_tickets gets a proper description as a control
+
+### Predictions (written BEFORE running)
+
+Test 1: "Get customer information for KrishTech"
+- Steps: 2–3
+- Tools called (in order): get_customer first — but it needs an ID, and the LLM
+  may pass "KrishTech" as the id argument
+- Failure mode expected: wrong args
+- Does it eventually answer correctly? No
+
+Test 2: "What's overdue for customer 3?"
+- Steps: 2–4
+- Which invoice tool gets called first: search_invoices
+- Does it call both? Possibly yes
+- Does it answer correctly? Probably no — the generic search_invoices description
+  makes it compete with list_customer_invoices instead of one clearly winning
+
+Test 3: "Show me GrubMatch's latest invoice"
+- Day 26 baseline: 3 steps, clean answer
+- Prediction with bad descriptions: 3–5 steps
+- Outcome: likely eventually correct, but with extra/wrong tool calls
+- Which specific tool gets swapped in incorrectly: search_invoices instead of
+  list_customer_invoices
+
+### Which failure appears first across the three tests?
+(Day 25 open prediction: wrong args. Real answer today: TBD)
+
+### After fixing get_customer only (not search_invoices):
+- Which tests improve? TBD
+- Which stay broken? TBD
+
+### After fixing search_invoices too:
+- Full recovery? TBD
+- Any residual weirdness? TBD
+
+### Actuals (fill in after running)
+## Test 1 actuals:
+- 4 steps total
+- Sequence: find_customer("KrishTech") → get_customer(1) → get_customer(2) → final answer
+- Correct answer, both KrishTech records surfaced
+
+Prediction vs reality:
+- Predicted: get_customer called with "KrishTech" as id, wrong args, no answer
+- Actual: model respected the integer type constraint, went through find_customer
+  first to get an id
+- Root cause of prediction gap: JSON schema type: integer is enforced by the
+  tool-calling layer regardless of description quality. A bad description
+  cannot override a hard type constraint.
+
+What this implies for Tests 2 and 3:
+- search_invoices takes a string filter (no type constraint), so its bad
+  description has room to bite in Test 2
+- Test 3 involves a name lookup that neither invoice tool supports, so
+  routing will go through find_customer regardless — bad description may
+  not matter there either
+
+Failure mode observed: NONE. Bad description was insufficient to break selection
+here. The experiment revealed that description quality matters most when
+type constraints don't already disambiguate.
+
+## Test 2 actuals:
+- 2 steps total
+- Sequence: list_customer_invoices(customer_id=3) → filtered by status in
+  final answer, no second tool call
+- Correct answer (4 overdue invoices)
+
+Prediction vs reality:
+- Predicted: search_invoices called first, possibly both invoice tools,
+  probably wrong answer
+- Actual: model went straight to list_customer_invoices and filtered
+  "overdue" from the results itself; search_invoices never called
+- Root cause: list_customer_invoices has a strong description
+  ("use when you have a customer ID"). "customer 3" in the question made
+  that route obviously correct. The bad description on search_invoices
+  didn't matter because a clearly-described alternative existed.
+
+Failure mode observed: NONE. Emerging finding across Tests 1 and 2:
+one bad description in an overlapping pair is not enough to break
+selection. The clear description on the other tool is doing the work.
+
+## Test 3 actuals:
+- 4 steps total
+- Sequence: find_customer("GrubMatch") → list_customer_invoices(3) →
+  list_customer_invoices(4) → final answer
+- Correct answer, both GrubMatch records surfaced
+
+Prediction vs reality:
+- Predicted: 3-5 steps, likely eventually correct, search_invoices swapped
+  in incorrectly
+- Actual: 4 steps (in predicted range), correct answer, search_invoices
+  never called. Model routed name → find_customer → list_customer_invoices
+  cleanly, same shape as Day 26's baseline.
+- Root cause: same as Test 2 — the strong descriptions on find_customer
+  and list_customer_invoices routed correctly, bad description on
+  search_invoices did not compete.
+
+Failure mode observed: NONE.
+
+Cross-test finding (Tests 1-3):
+Bad tool descriptions alone did not break selection in any of the three
+tests. The clear descriptions on find_customer and list_customer_invoices
+were sufficient to route correctly even when their overlap partners
+(get_customer, search_invoices) were badly described.
+
+Refined hypothesis: description quality has to be bad on ALL sides of an
+overlap for selection to break. Asymmetric badness routes toward the
+clear tool. To reproduce the "12 tool calls" failure mode from the prep
+doc, both tools in a matched pair need to be degraded.
+
+### What I learned (3–4 sentences, written after all runs)
+
+### What I learned
+
+- Set out to reproduce the "12 tool calls" overlapping-description failure
+  from Part 5.2 of the prep doc.
+- With two of six tools badly described (get_customer, search_invoices),
+  all three tests routed correctly. The clear descriptions on their
+  overlap partners (find_customer, list_customer_invoices) were doing
+  enough work.
+- Escalated by also degrading find_customer's description. Test 1 STILL
+  routed correctly.
+- Mechanism: with descriptions empty of routing information, the model
+  routed on parameter types. find_customer takes a string, get_customer
+  takes an integer, and the question "KrishTech" is a string. The type
+  signal was sufficient.
+- Refined mental model: tool selection is schema-holistic, not
+  description-only. To break selection, BOTH descriptions AND parameter
+  shapes need to be ambiguous — same types, similar parameter names,
+  no distinguishing feature anywhere in the schema.
+- Phases E and F (fix one description, then the other, observe delta)
+  were not run because no test failed to fix.
+
+### Interview story shape
+
+"Tool selection is more robust than the prep material implies. I tried to
+reproduce a classic failure by degrading tool descriptions. Selection
+held up because the model uses the full schema — parameter types,
+parameter names, and descriptions together. Descriptions matter most
+when types can't disambiguate. That changed how I'd approach tool design:
+if two tools have distinct parameter types, description quality has some
+slack; if they have identical parameter types, description quality is
+load-bearing."
