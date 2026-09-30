@@ -767,3 +767,75 @@ escalate to finance — because my tool result told it what happened
 but not why. The fix is a reject_reason field in the return, but the
 lesson is: tool return values are prompts, and they need to speak the
 model's language, not the database's."
+
+## Task 2 — Claude Agent SDK rebuild
+
+### What I built
+Same 3 tools (find_customer, list_customer_invoices, issue_refund) exposed
+as MCP tools via `@tool` decorator. Wrapped in an SDK MCP server with
+`create_sdk_mcp_server`. Called via `query()`. HITL gate initially attempted
+via `can_use_tool` callback, then rebuilt as a `PreToolUse` hook after
+discovering the callback was silently bypassed.
+
+### The SDK is Claude Code as a library
+Not a lightweight wrapper. `claude-agent-sdk` runs the `claude` CLI as a
+subprocess and injects Claude Code's full harness prompt. Every session
+pays ~22K tokens of cache-creation overhead for the CLI's tool preamble,
+even when only my 3 MCP tools are needed. Cost per single lookup: $0.033.
+Cost per refund flow: $0.043. My Groq hand-rolled equivalent costs
+effectively zero.
+
+### The shadowed-gate bug (interview finding)
+First attempt used `can_use_tool` — the SDK's simple permission callback.
+Ran the refund flow. Tool executed, DB row created, no confirmation
+prompt appeared. Only warning:
+
+    CanUseToolShadowedWarning: can_use_tool will not be invoked for
+    mcp__project2__issue_refund. An allowed_tools entry that allows a
+    whole tool auto-approves it before the callback is consulted.
+
+The SDK does not raise on this — it just warns. If I hadn't caught the
+warning and checked the DB, I would have shipped an agent whose HITL
+gate never fired. This is a real production risk: the code looks
+correct, the behaviour is silently wrong.
+
+### The fix: PreToolUse hook
+Replaced `can_use_tool` with a `PreToolUse` hook registered via
+`HookMatcher(matcher="mcp__project2__issue_refund", hooks=[refund_gate_hook])`.
+Hook fires deterministically before the tool runs regardless of
+allow-list membership. Confirmation box appeared, my y/N controlled
+whether the tool executed. Working.
+
+### Comparison to hand-rolled version
+
+| Aspect | Hand-rolled (Groq) | SDK (Claude Code) |
+|---|---|---|
+| Lines of code | ~250 | ~200 |
+| Cost per refund run | ~free | $0.043 |
+| Tokens per session | ~1K | ~110K (mostly harness cache) |
+| HITL gate primitive | manual dispatch table | HookMatcher + async hook |
+| Gate reliability | explicit — cannot silently skip | shadowed by default if you use can_use_tool with allowed_tools |
+| Tool selection | schema-based | ToolSearch subagent (SDK auto-invokes) |
+| Debuggability | full transparency, print any step | must parse AssistantMessage / ResultMessage stream |
+| Best for | small tool sets, cost-sensitive, custom gate logic | large tool sets, sessions, Claude Code parity |
+
+### Interview line
+"I built the same agent twice — hand-rolled against Groq, then on the
+Claude Agent SDK. The SDK is Claude Code as a library, which is a
+strength if you want its harness (sessions, subagents, MCP, ToolSearch
+for big tool sets) and a cost if you don't. My hand-rolled loop cost
+effectively zero per run; the SDK cost ~$0.04 mostly for Claude Code's
+harness prompt. But the real production-relevant finding was that
+`can_use_tool` — the SDK's simplest permission primitive — is
+silently bypassed when the tool is in `allowed_tools`. The SDK warns
+but doesn't raise. I only caught it by checking the DB and seeing a
+refund had been created. Switched to a `PreToolUse` hook, which fires
+deterministically. This is exactly the class of bug — silent security
+degradation — that HITL systems exist to prevent, and it's built into
+the SDK's default path."
+
+### Follow-up (not today)
+- Wire hook-approval through to execute_refund so the tool returns
+  `executed` and the model sees the complete transaction, not just
+  `proposed`. Currently the SDK version stops at proposal — the human
+  approval fires (via hook) but doesn't chain into execution.
