@@ -587,3 +587,183 @@ when types can't disambiguate. That changed how I'd approach tool design:
 if two tools have distinct parameter types, description quality has some
 slack; if they have identical parameter types, description quality is
 load-bearing."
+
+
+# Day 28 — Sep 30 — HITL confirmation gate + idempotency
+
+## Setup
+
+Adding a destructive tool: issue_refund(invoice_id, amount, reason)
+Gate lives in the agent loop, not inside the tool. A DESTRUCTIVE_TOOLS
+set names which tools require approval; the loop intercepts, shows the
+proposed action, waits for "y" or "n", then either executes or cancels.
+
+Idempotency: a new refund_requests table stores each proposed refund
+with a UUID. Re-proposing the same (invoice_id, amount) reuses the
+existing row instead of creating a duplicate. Executed refunds are
+a no-op on re-execute. Partial unique index on (invoice_id, amount)
+where status IN ('proposed', 'approved') enforces this at the DB layer.
+execute_refund uses SELECT FOR UPDATE for concurrent-execute safety.
+
+Test question: "Issue a refund for GrubMatch's most recent invoice —
+customer says the goods were damaged."
+
+## Predictions (written BEFORE running)
+
+### Prediction 1 — Happy path (approve at the gate)
+
+- Total steps to answer: 6–7 steps
+- Tool call sequence: find_customer → list_customer_invoices → issue_refund → gate/approval → issue_refund execution → final answer
+- Does the model surface the amount and reason clearly to me before the gate? Yes — I expect the gate to clearly show the invoice, refund amount, and reason before asking for approval.
+
+### Prediction 2 — Reject at the gate (type "n")
+
+- Does the model gracefully cancel and tell the user the refund was not issued? Or does it try a different approach — retry, re-propose, or force through? I predict it will gracefully cancel, not retry or force the refund, and clearly tell the user that the refund was not issued.
+- How many steps after rejection before the final answer? 1 step — the rejection should immediately lead to the final answer.
+
+### Prediction 3 — Double proposal (agent calls issue_refund twice in one turn, or across two turns)
+
+- Does my idempotency check catch the duplicate? Yes — the same (invoice_id, amount) should reuse the existing refund request instead of creating a duplicate.
+- Does the gate ask twice, or does the second call short-circuit because the same (invoice_id, amount) is already 'proposed'? I predict the second proposal will be detected as a duplicate and will not create a second refund request; however, the gate may still ask for approval again depending on where the idempotency check occurs.
+- What does the model see when the second call returns "already proposed, refund_id=..."? Does it get confused? I predict the model will understand that the refund already exists and avoid creating another refund, although there may be some confusion if the tool response is not explicit enough.
+
+## Actuals
+
+### Happy path (GrubMatch Foods, invoice 16, $2,450)
+
+Ran twice. First run crashed at execute_refund with a CheckViolation —
+the invoices status check constraint didn't include 'refunded'. Fixed
+by extending the constraint: ALTER TABLE invoices ADD CONSTRAINT
+invoices_status_check CHECK (status IN ('paid', 'pending', 'overdue',
+'refunded')).
+
+Interesting side effect of the crash: the issue_refund INSERT
+committed in its own transaction before execute_refund crashed, so
+the proposed row survived. Refund UUID
+59df3906-154f-40e6-8ec3-c5f18451a6c2.
+
+Second run — same question, fresh agent instance:
+- 4 steps total (predicted 6–7)
+- Sequence: find_customer("GrubMatch Foods") → list_customer_invoices(3)
+  → issue_refund(16, 2450, "goods were damaged in transit") → final answer
+- Model picked GrubMatch Foods directly (didn't fetch Labs) — the
+  question naming "Foods" explicitly disambiguated
+- Gate box showed all four fields cleanly (tool, invoice, amount, reason,
+  refund_id)
+- Refund UUID returned by issue_refund: same
+  59df3906-154f-40e6-8ec3-c5f18451a6c2 as the failed first run —
+  idempotency caught the surviving 'proposed' row and reused it. This
+  wasn't a synthetic Test 22 case; the two calls were in separate
+  agent invocations minutes apart.
+- Approved at gate. execute_refund succeeded. Invoice 16 flipped to
+  'refunded'. Refund row status went to 'executed' with executed_at
+  populated.
+- Model wrote a clean final answer confirming the refund
+
+Prediction vs actual: undershot on steps (4 vs 6–7). I counted the
+gate as its own step in the prediction — it isn't, it's a pause
+inside step 3. The four steps are: find, list, issue+gate+execute
+(one logical step from the model's view), final answer.
+
+### Reject path (KrishTech Solutions, invoice 20, $1,213)
+
+Note: forgot to switch the __main__ question after the first reject
+attempt and accidentally approved instead of rejected on invoice 21.
+Cleaned up, redid on invoice 20 (invoice 21 was now already refunded
+so the model correctly skipped it).
+
+- 8 steps total (predicted 4–5 including gate)
+- Sequence: find_customer → get_customer → list_customer_invoices →
+  issue_refund(20) → gate rejected → get_invoice(20) →
+  issue_refund(21) → issue_refund(20) → gate rejected → final answer
+- After I typed 'n' on invoice 20, the model called get_invoice(20)
+  to "inspect" the invoice, then tried issue_refund on the
+  already-refunded invoice 21 (idempotency correctly returned
+  already_executed), then RE-PROPOSED for invoice 20 with a fresh UUID
+  because rejected rows are excluded from the idempotency SELECT.
+  Rejected again.
+- Final answer: model interpreted the rejection as a SYSTEM rejection,
+  not a human decision. Wrote: "the system automatically rejected the
+  request... I'll forward this to our finance team for manual review."
+- Invoice 20 status: unchanged ('paid') — reject_refund never touches
+  invoices. Correct.
+
+Prediction vs actual: really wrong on both. The model did NOT
+gracefully cancel — it looped, re-proposed, and misinterpreted the
+rejection as an automated system error rather than my decision.
+
+Two findings from this:
+
+1. **Rejection semantics gap.** reject_refund's return doesn't tell
+   the model WHY it was rejected. Model conflated human 'no' with
+   system error. Fix (not applied today): add a reject_reason field
+   like "human_operator_declined" so the model can distinguish
+   operator-declined from system-blocked. Logged as follow-up.
+
+2. **Rejection is intentionally non-sticky.** Same (invoice_id, amount)
+   can be re-proposed after rejection because the idempotency SELECT
+   excludes 'rejected' status. This matches real cases where a user
+   might retry ("wait, I meant yes"). A sticky-rejection variant
+   (returning previously_rejected and skipping the gate) would suit
+   fraud-prevention contexts. Deliberate design choice, not a bug.
+
+Two rejected rows for invoice 20 in refund_requests, 16 seconds apart,
+different UUIDs — DB audit trail confirms both the failure mode and
+the non-sticky design.
+
+### Double proposal (idempotency under real conditions)
+
+Actually got tested twice today, both times cleanly:
+
+1. During the happy path retry — issue_refund called on (16, 2450)
+   again after the first run's crash. Idempotency returned the
+   existing UUID instead of a new one. Confirmed in the gate box
+   showing the same 59df3906-... UUID as the failed run.
+
+2. During the reject path — Step 6 of the run above, model called
+   issue_refund(21, 1434) on the already-refunded invoice.
+   Idempotency correctly returned status: already_executed with the
+   original UUID. Model saw this and understood "that one's done"
+   without confusion.
+
+Prediction vs actual: right on all three sub-questions. Idempotency
+caught duplicates, no second gate fired for already-proposed or
+already-executed cases, and the model handled the already_executed
+response cleanly.
+
+## What I learned
+
+- The interesting run wasn't the happy path — it was the reject path,
+  which surfaced a real prompting/tool-design bug I couldn't have
+  predicted from a code review alone. The model conflated "human said
+  no" with "system rejected" and offered to escalate to finance. That
+  gap only shows up when a human actually says no.
+- Idempotency needs to be tested under REAL failure conditions, not
+  just synthetic tests. The happy-path crash-and-retry gave me a
+  better idempotency demonstration than Test 22 ever did.
+- Architectural point worth naming in interviews: execute_refund and
+  reject_refund are NOT in the tool registry the model sees. Only
+  issue_refund is. So the model literally cannot execute a refund
+  without going through the gate. The confused-deputy attack surface
+  is closed by architecture, not by prompting.
+- DB constraints caught the missing 'refunded' status at the storage
+  layer. If invoices.status had accepted any string, a bad code path
+  could have set garbage state. Constraints are the last line of
+  defence when application logic is wrong.
+
+## Follow-ups (not doing today)
+
+- Add reject_reason field to reject_refund return so model can tell
+  human-decline from system-block
+- Consider sticky-rejection variant for fraud contexts (currently
+  non-sticky by design)
+
+## Interview story shape
+
+"Building a human-gated refund tool taught me that the interesting
+bugs live in the reject path, not the happy path. My model interpreted
+the human 'no' as an automated system rejection and offered to
+escalate to finance — because my tool result told it what happened
+but not why. The fix is a reject_reason field in the return, but the
+lesson is: tool return values are prompts, and they need to speak the
+model's language, not the database's."

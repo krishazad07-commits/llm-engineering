@@ -224,6 +224,52 @@ LIST_CUSTOMER_TICKETS_SCHEMA = {
         },
     },
 }
+ISSUE_REFUND_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "issue_refund",
+        "description": (
+            "Proposes a refund on a specific invoice. THIS ACTION "
+            "REQUIRES HUMAN APPROVAL — calling this tool does not "
+            "immediately issue the refund; it creates a proposal "
+            "that is shown to the human operator for confirmation. "
+            "Use this tool when the user has explicitly asked to "
+            "issue a refund and you already have the invoice ID and "
+            "refund amount. Do not use this tool speculatively or "
+            "for hypotheticals. Returns a proposal record; the "
+            "system will then handle approval and execution."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "invoice_id": {
+                    "type": "integer",
+                    "description": (
+                        "The unique ID of the invoice being refunded. "
+                        "Must be a positive integer."
+                    ),
+                },
+                "amount": {
+                    "type": "number",
+                    "description": (
+                        "The refund amount, in the invoice's currency. "
+                        "Must be greater than zero. Typically matches "
+                        "the invoice amount but may be a partial refund."
+                    ),
+                },
+                "reason": {
+                    "type": "string",
+                    "description": (
+                        "A short human-readable reason for the refund, "
+                        "such as 'goods damaged in transit' or "
+                        "'duplicate charge'."
+                    ),
+                },
+            },
+            "required": ["invoice_id", "amount", "reason"],
+        },
+    },
+}
 
 
 # ============================================================
@@ -237,4 +283,5 @@ ALL_TOOLS = [
     GET_CUSTOMER_SCHEMA,
     SEARCH_INVOICES_SCHEMA,
     LIST_CUSTOMER_TICKETS_SCHEMA,
+    ISSUE_REFUND_SCHEMA,  # ← new
 ]

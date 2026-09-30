@@ -20,6 +20,9 @@ from tools import (
     get_customer,
     search_invoices,
     list_customer_tickets,
+    issue_refund,
+    execute_refund,   # ← add
+    reject_refund,    # ← add
 )
 from tool_schemas import ALL_TOOLS
 
@@ -28,7 +31,7 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent.parent / ".env")
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
 MODEL = "openai/gpt-oss-120b"
 MAX_STEPS = 10
-
+DESTRUCTIVE_TOOLS = {"issue_refund"}
 # Map tool names (as the LLM sees them) → the actual Python functions
 TOOL_REGISTRY = {
     "find_customer": find_customer,
@@ -37,6 +40,7 @@ TOOL_REGISTRY = {
     "get_customer": get_customer,
     "search_invoices": search_invoices,
     "list_customer_tickets": list_customer_tickets,
+    "issue_refund": issue_refund,
 }
 
 SYSTEM_PROMPT = (
@@ -72,6 +76,69 @@ def run_tool(name: str, arguments: dict) -> str:
         # Return the error as a string, don't raise. The LLM needs to see it.
         return f"Error: {type(e).__name__}: {e}"
 
+def handle_destructive_confirmation(
+    name: str,
+    arguments: dict,
+    proposal_result: str,
+) -> str:
+    """
+    Show the proposed destructive action to the user, wait for y/n,
+    and either execute or reject via the appropriate helper.
+
+    Returns the final tool result string to hand back to the model —
+    reflecting execution, rejection, or a no-op if the proposal was
+    already handled.
+    """
+
+    # TODO 1: parse proposal_result as JSON
+    # If it's not JSON (i.e. the tool errored during proposal),
+    # return it unchanged — nothing to confirm.
+
+    try:
+        proposal_dict = json.loads(proposal_result)
+    except (json.JSONDecodeError, TypeError):
+        return proposal_result
+
+    # TODO 2: if the proposal came back as 'already_executed',
+    # return proposal_result unchanged. No gate needed.
+
+    if proposal_dict.get("status") == "already_executed":
+        return proposal_result
+
+    # TODO 3: print a confirmation prompt showing:
+    # - tool name
+    # - arguments (invoice_id, amount, reason)
+    # - refund_id from the proposal
+
+    print("\n" + "=" * 60)
+    print("DESTRUCTIVE ACTION — CONFIRMATION REQUIRED")
+    print("=" * 60)
+    print(f"Tool:      {name}")
+    print(f"Invoice:   {arguments.get('invoice_id')}")
+    print(f"Amount:    {arguments.get('amount')}")
+    print(f"Reason:    {arguments.get('reason')}")
+    print(f"Refund ID: {proposal_dict.get('refund_id')}")
+    print("=" * 60)
+
+    user_input = input("Approve? [y/N]: ").strip().lower()
+    print(f"→ {'APPROVED' if user_input == 'y' else 'REJECTED'}\n")
+
+    # TODO 4: dispatch based on name and user_input
+
+    if name == "issue_refund":
+        if user_input == "y":
+            final = execute_refund(proposal_dict["refund_id"])
+        else:
+            final = reject_refund(proposal_dict["refund_id"])
+        return json.dumps(final)
+
+    # Unknown destructive tool — shouldn't happen if DESTRUCTIVE_TOOLS
+    # and this dispatch stay in sync. Fail loudly rather than silently
+    # returning None.
+    raise ValueError(
+        f"Tool '{name}' is in DESTRUCTIVE_TOOLS but has no confirmation "
+        f"handler. Add a branch to handle_destructive_confirmation."
+    )
 
 def run_agent(question: str, verbose: bool = True) -> str:
     """
@@ -114,8 +181,11 @@ def run_agent(question: str, verbose: bool = True) -> str:
 
             result = run_tool(name, arguments)
 
+            # HITL gate for destructive tools
+            if name in DESTRUCTIVE_TOOLS:
+                result = handle_destructive_confirmation(name, arguments, result)
+
             if verbose:
-                # Truncate very long results in the log
                 display = result if len(result) < 200 else result[:200] + "..."
                 print(f"  → {display}")
 
@@ -130,9 +200,9 @@ def run_agent(question: str, verbose: bool = True) -> str:
 
 
 if __name__ == "__main__":
-    # Sanity check: routes cleanly to get_customer(1) when the ID is
-    # given directly. Used to confirm the six-tool setup still works
-    # after restoring descriptions.
-    question = "What's the email of customer 1?"
+    question = (
+        "Issue a refund for KrishTech Solutions' most recent invoice. "
+        "Customer says they were double-charged."
+    )
     answer = run_agent(question)
     print(f"\n=== FINAL ===\n{answer}")
