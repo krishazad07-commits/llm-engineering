@@ -839,3 +839,41 @@ the SDK's default path."
   `executed` and the model sees the complete transaction, not just
   `proposed`. Currently the SDK version stops at proposal — the human
   approval fires (via hook) but doesn't chain into execution.
+
+
+## Day 29 — Subagent pattern (Task 3)
+
+### What I changed
+- Built `subagent.py` — isolated read-only loop, 6 tools, own system prompt.
+  Returns a summary string + token stats via `LAST_RUN_STATS` side channel.
+- Added `explore_customer_profile` as a tool on the main agent that calls
+  `subagent_loop` and only returns `{"summary": ...}` — token counts
+  deliberately hidden from the main agent.
+- Instrumented `run_agent` to track `main_input_tokens` across all turns
+  and return a dict instead of just the answer string.
+- A/B runner: same question ("full situation report on GrubMatch Foods"),
+  Run A with the raw tools only, Run B with just `explore_customer_profile`.
+
+### Numbers
+Prediction: ratio B/A on main input tokens = 0.250
+
+Actual:
+|                       | Run A  | Run B |
+|-----------------------|--------|-------|
+| main input tokens     | 9,359  | 1,122 |
+| main output tokens    | 1,640  |   556 |
+| main steps            |    5   |    2  |
+| subagent input tokens |    0   | 8,302 |
+
+Ratio B/A on main input = 0.120 (I was ~2× pessimistic)
+Total input tokens: Run A 9,359 vs Run B 9,424 — basically identical.
+
+### What surprised me
+I expected Run B to use around 25% of the main-agent tokens, but it was only 12% because Run A kept re-sending the growing tool results on every turn. What surprised me most was that the total input tokens were basically the same — the subagent didn't save tokens, it just moved the expensive work into a separate disposable conversation. I also noticed Run B guessed customer ID 1 for GrubMatch even though the real ID was 3, because `find_customer` wasn't available to the main agent; luckily the subagent recovered by searching the name.
+
+### Interview line earned
+Subagents aren't a cost-reduction pattern — they're a context-management
+pattern. For a single question, total tokens are basically unchanged.
+The win is that tool-result bloat lives and dies inside the subagent's
+disposable conversation, so the main agent stays small over long
+sessions. The cost is answer fidelity: the summary is lossy by design.

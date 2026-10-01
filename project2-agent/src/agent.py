@@ -9,7 +9,7 @@ returns a final text answer or MAX_STEPS is hit.
 import json
 import os
 from pathlib import Path
-
+from subagent import LAST_RUN_STATS
 from dotenv import load_dotenv
 from groq import Groq
 
@@ -21,8 +21,9 @@ from tools import (
     search_invoices,
     list_customer_tickets,
     issue_refund,
-    execute_refund,   # ← add
-    reject_refund,    # ← add
+    execute_refund,
+    reject_refund,
+    explore_customer_profile,   # NEW
 )
 from tool_schemas import ALL_TOOLS
 
@@ -41,6 +42,7 @@ TOOL_REGISTRY = {
     "search_invoices": search_invoices,
     "list_customer_tickets": list_customer_tickets,
     "issue_refund": issue_refund,
+    "explore_customer_profile": explore_customer_profile,   # NEW
 }
 
 SYSTEM_PROMPT = (
@@ -140,10 +142,16 @@ def handle_destructive_confirmation(
         f"handler. Add a branch to handle_destructive_confirmation."
     )
 
-def run_agent(question: str, verbose: bool = True) -> str:
+def run_agent(question: str, tools=ALL_TOOLS, verbose: bool = True) -> dict:
     """
-    Run the agent loop for a single question. Return the final text answer.
+    Run the agent loop for a single question. Return a dict with the
+    final answer plus per-run measurement data (token counts, step count,
+    and any subagent runs that happened during this invocation).
     """
+    main_in = 0
+    main_out = 0
+    subagent_runs_before = len(LAST_RUN_STATS)
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": question},
@@ -156,19 +164,29 @@ def run_agent(question: str, verbose: bool = True) -> str:
         response = client.chat.completions.create(
             model=MODEL,
             messages=messages,
-            tools=ALL_TOOLS,
+            tools=tools,
         )
+        if response.usage:
+            main_in += response.usage.prompt_tokens or 0
+            main_out += response.usage.completion_tokens or 0
+
         msg = response.choices[0].message
 
         # Append the assistant's message to the history.
         # Groq returns a Pydantic-like object; convert to dict for consistency.
         messages.append(msg.model_dump(exclude_none=True))
 
-        # If msg.tool_calls is None or empty, we're done — return msg.content.
+        # If msg.tool_calls is None or empty, we're done.
         if not msg.tool_calls:
             if verbose:
                 print(f"Final answer: {msg.content}")
-            return msg.content
+            return {
+                "answer": msg.content,
+                "main_input_tokens": main_in,
+                "main_output_tokens": main_out,
+                "steps": step + 1,
+                "subagent_runs": LAST_RUN_STATS[subagent_runs_before:],
+            }
 
         # For each tool call, run it and append the result as a "tool" message.
         # Each tool result MUST include tool_call_id matching the one the LLM sent.
@@ -196,13 +214,60 @@ def run_agent(question: str, verbose: bool = True) -> str:
             })
 
     # If we fell out of the loop, we hit MAX_STEPS
-    return f"[MAX_STEPS ({MAX_STEPS}) reached without a final answer]"
-
+    return {
+        "answer": f"[MAX_STEPS ({MAX_STEPS}) reached without a final answer]",
+        "main_input_tokens": main_in,
+        "main_output_tokens": main_out,
+        "steps": MAX_STEPS,
+        "subagent_runs": LAST_RUN_STATS[subagent_runs_before:],
+    }
 
 if __name__ == "__main__":
+    from tool_schemas import EXPLORE_CUSTOMER_PROFILE_SCHEMA
+
     question = (
-        "Issue a refund for KrishTech Solutions' most recent invoice. "
-        "Customer says they were double-charged."
+        "Give me a full situation report on GrubMatch Foods — "
+        "invoice history, open tickets, recent refunds."
     )
-    answer = run_agent(question)
-    print(f"\n=== FINAL ===\n{answer}")
+
+    # Run A: main agent does everything itself. Subagent tool hidden.
+    tools_a = [
+        t for t in ALL_TOOLS
+        if t["function"]["name"] != "explore_customer_profile"
+    ]
+
+    # Run B: only the subagent tool is exposed. Main agent must delegate.
+    tools_b = [EXPLORE_CUSTOMER_PROFILE_SCHEMA]
+
+    print("\n" + "=" * 70)
+    print("RUN A — no subagent (main agent uses raw tools)")
+    print("=" * 70)
+    result_a = run_agent(question, tools=tools_a, verbose=True)
+
+    print("\n" + "=" * 70)
+    print("RUN B — subagent only")
+    print("=" * 70)
+    result_b = run_agent(question, tools=tools_b, verbose=True)
+
+    # ---- Comparison ----
+    def _sub_total(runs):
+        return sum(r["input_tokens"] for r in runs)
+
+    print("\n" + "=" * 70)
+    print("COMPARISON")
+    print("=" * 70)
+    print(f"{'':30} {'Run A':>15} {'Run B':>15}")
+    print(f"{'main input tokens':30} {result_a['main_input_tokens']:>15,} {result_b['main_input_tokens']:>15,}")
+    print(f"{'main output tokens':30} {result_a['main_output_tokens']:>15,} {result_b['main_output_tokens']:>15,}")
+    print(f"{'main steps':30} {result_a['steps']:>15} {result_b['steps']:>15}")
+    print(f"{'subagent runs':30} {len(result_a['subagent_runs']):>15} {len(result_b['subagent_runs']):>15}")
+    print(f"{'subagent input tokens':30} {_sub_total(result_a['subagent_runs']):>15,} {_sub_total(result_b['subagent_runs']):>15,}")
+
+    ratio = result_b['main_input_tokens'] / result_a['main_input_tokens']
+    print(f"\nRatio B/A on main input tokens: {ratio:.3f}")
+    print(f"Your prediction was: 0.250 (1/4)")
+
+    print("\n--- Run A answer ---")
+    print(result_a["answer"])
+    print("\n--- Run B answer ---")
+    print(result_b["answer"])

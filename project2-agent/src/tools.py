@@ -752,7 +752,26 @@ def reject_refund(refund_id: str) -> dict[str, Any]:
                 "amount": float(amount),
                 "reason": reason,
             }
+def explore_customer_profile(
+    customer_id: int,
+    question: str,
+) -> dict[str, Any]:
+    """
+    Run an isolated read-only research subagent for a customer.
 
+    Only the final summary crosses the subagent boundary.
+    Token counts and raw tool results stay inside the subagent.
+    """
+    from subagent import subagent_loop
+
+    result = subagent_loop(
+        customer_id=str(customer_id),
+        question=question,
+    )
+
+    return {
+        "summary": result["summary"],
+    }
 # ============================================================
 # Manual smoke tests
 # ============================================================

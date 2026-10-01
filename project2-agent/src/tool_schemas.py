@@ -271,6 +271,46 @@ ISSUE_REFUND_SCHEMA = {
     },
 }
 
+# ============================================================
+# CUSTOMER RESEARCH
+# ============================================================
+
+EXPLORE_CUSTOMER_PROFILE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "explore_customer_profile",
+        "description": (
+            "Deep-dive customer research — use when the user asks "
+            "for a full report, situation summary, or multi-faceted "
+            "analysis of a specific customer. This tool investigates "
+            "the customer's information, invoice history, and support "
+            "tickets and returns a concise written summary. Do not use "
+            "this tool for a simple lookup when a specific customer, "
+            "invoice, or ticket tool can answer the question directly."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "customer_id": {
+                    "type": "integer",
+                    "description": (
+                        "The unique ID of the customer to investigate. "
+                        "It must be a positive integer."
+                    ),
+                },
+                "question": {
+                    "type": "string",
+                    "description": (
+                        "The specific research question or situation "
+                        "that the subagent should investigate, including "
+                        "the aspects the main agent wants summarized."
+                    ),
+                },
+            },
+            "required": ["customer_id", "question"],
+        },
+    },
+}
 
 # ============================================================
 # ALL TOOLS
@@ -283,5 +323,6 @@ ALL_TOOLS = [
     GET_CUSTOMER_SCHEMA,
     SEARCH_INVOICES_SCHEMA,
     LIST_CUSTOMER_TICKETS_SCHEMA,
-    ISSUE_REFUND_SCHEMA,  # ← new
+    ISSUE_REFUND_SCHEMA,
+    EXPLORE_CUSTOMER_PROFILE_SCHEMA,
 ]
