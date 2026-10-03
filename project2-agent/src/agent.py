@@ -50,7 +50,16 @@ SYSTEM_PROMPT = (
     "You can look up customer information and invoices using the tools provided. "
     "Answer the user's question by calling tools as needed, then producing a clear final answer. "
     "If a tool returns an error, read the error message and try a different approach. "
-    "When you have enough information to answer, stop calling tools and just answer."
+    "When you have enough information to answer, stop calling tools and just answer.\n\n"
+    "Answer what you can from the available tools. If a tool returns an empty list, that is "
+    "a valid finding — report it ('no overdue invoices', 'no refunds on record'). "
+    "If the user asks a multi-part question and some parts are answerable, answer those parts "
+    "and briefly note what you could not determine.\n\n"
+    "Only respond with 'INSUFFICIENT_CONTEXT: <one sentence>' when the ENTIRE question is "
+    "unanswerable — for example, if the user asks for data that no tool can access (phone "
+    "numbers, shipping addresses, order line items), or references a customer or invoice "
+    "that doesn't exist at all. Never use INSUFFICIENT_CONTEXT when any meaningful part of "
+    "the question can be answered from the tools."
 )
 
 
@@ -223,51 +232,52 @@ def run_agent(question: str, tools=ALL_TOOLS, verbose: bool = True) -> dict:
     }
 
 if __name__ == "__main__":
-    from tool_schemas import EXPLORE_CUSTOMER_PROFILE_SCHEMA
-
-    question = (
-        "Give me a full situation report on GrubMatch Foods — "
-        "invoice history, open tickets, recent refunds."
+    # Quick abstention sanity check — unanswerable question
+    result = run_agent(
+        "Give me a report on GrubMatch Foods — invoice history and open tickets.",
+        verbose=True,
     )
+    print("\n=== FINAL ===")
+    print(result["answer"])
 
-    # Run A: main agent does everything itself. Subagent tool hidden.
-    tools_a = [
-        t for t in ALL_TOOLS
-        if t["function"]["name"] != "explore_customer_profile"
-    ]
+    # # Run A: main agent does everything itself. Subagent tool hidden.
+    # tools_a = [
+    #     t for t in ALL_TOOLS
+    #     if t["function"]["name"] != "explore_customer_profile"
+    # ]
 
-    # Run B: only the subagent tool is exposed. Main agent must delegate.
-    tools_b = [EXPLORE_CUSTOMER_PROFILE_SCHEMA]
+    # # Run B: only the subagent tool is exposed. Main agent must delegate.
+    # tools_b = [EXPLORE_CUSTOMER_PROFILE_SCHEMA]
 
-    print("\n" + "=" * 70)
-    print("RUN A — no subagent (main agent uses raw tools)")
-    print("=" * 70)
-    result_a = run_agent(question, tools=tools_a, verbose=True)
+    # print("\n" + "=" * 70)
+    # print("RUN A — no subagent (main agent uses raw tools)")
+    # print("=" * 70)
+    # result_a = run_agent(question, tools=tools_a, verbose=True)
 
-    print("\n" + "=" * 70)
-    print("RUN B — subagent only")
-    print("=" * 70)
-    result_b = run_agent(question, tools=tools_b, verbose=True)
+    # print("\n" + "=" * 70)
+    # print("RUN B — subagent only")
+    # print("=" * 70)
+    # result_b = run_agent(question, tools=tools_b, verbose=True)
 
-    # ---- Comparison ----
-    def _sub_total(runs):
-        return sum(r["input_tokens"] for r in runs)
+    # # ---- Comparison ----
+    # def _sub_total(runs):
+    #     return sum(r["input_tokens"] for r in runs)
 
-    print("\n" + "=" * 70)
-    print("COMPARISON")
-    print("=" * 70)
-    print(f"{'':30} {'Run A':>15} {'Run B':>15}")
-    print(f"{'main input tokens':30} {result_a['main_input_tokens']:>15,} {result_b['main_input_tokens']:>15,}")
-    print(f"{'main output tokens':30} {result_a['main_output_tokens']:>15,} {result_b['main_output_tokens']:>15,}")
-    print(f"{'main steps':30} {result_a['steps']:>15} {result_b['steps']:>15}")
-    print(f"{'subagent runs':30} {len(result_a['subagent_runs']):>15} {len(result_b['subagent_runs']):>15}")
-    print(f"{'subagent input tokens':30} {_sub_total(result_a['subagent_runs']):>15,} {_sub_total(result_b['subagent_runs']):>15,}")
+    # print("\n" + "=" * 70)
+    # print("COMPARISON")
+    # print("=" * 70)
+    # print(f"{'':30} {'Run A':>15} {'Run B':>15}")
+    # print(f"{'main input tokens':30} {result_a['main_input_tokens']:>15,} {result_b['main_input_tokens']:>15,}")
+    # print(f"{'main output tokens':30} {result_a['main_output_tokens']:>15,} {result_b['main_output_tokens']:>15,}")
+    # print(f"{'main steps':30} {result_a['steps']:>15} {result_b['steps']:>15}")
+    # print(f"{'subagent runs':30} {len(result_a['subagent_runs']):>15} {len(result_b['subagent_runs']):>15}")
+    # print(f"{'subagent input tokens':30} {_sub_total(result_a['subagent_runs']):>15,} {_sub_total(result_b['subagent_runs']):>15,}")
 
-    ratio = result_b['main_input_tokens'] / result_a['main_input_tokens']
-    print(f"\nRatio B/A on main input tokens: {ratio:.3f}")
-    print(f"Your prediction was: 0.250 (1/4)")
+    # ratio = result_b['main_input_tokens'] / result_a['main_input_tokens']
+    # print(f"\nRatio B/A on main input tokens: {ratio:.3f}")
+    # print(f"Your prediction was: 0.250 (1/4)")
 
-    print("\n--- Run A answer ---")
-    print(result_a["answer"])
-    print("\n--- Run B answer ---")
-    print(result_b["answer"])
+    # print("\n--- Run A answer ---")
+    # print(result_a["answer"])
+    # print("\n--- Run B answer ---")
+    # print(result_b["answer"])

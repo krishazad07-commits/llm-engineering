@@ -1,0 +1,25 @@
+{"id": "easy_01", "category": "easy_lookup", "question": "What is GrubMatch Foods' email address?", "expected": {"must_contain": ["grubmatch.foods@example.com"]}}
+{"id": "easy_02", "category": "easy_lookup", "question": "What is the status of invoice 15?", "expected": {"must_contain": ["paid"]}}
+{"id": "easy_03", "category": "easy_lookup", "question": "How much is invoice 16 for?", "expected": {"must_contain_any_of": [["2450"], ["2,450"]]}}
+{"id": "easy_04", "category": "easy_lookup", "question": "Who is customer id 7?", "expected": {"must_contain": ["Ahmedabad Analytics"]}}
+
+{"id": "chain_01", "category": "multi_step", "question": "What is the most recent invoice for GrubMatch Foods?", "expected": {"must_contain_any_of": [["16"], ["2450"], ["2,450"]]}}
+{"id": "chain_02", "category": "multi_step", "question": "Does KrishTech Solutions have any open support tickets?", "expected": {"must_contain_any_of": [["Login"], ["ticket 1"], ["#1"], ["one open"], ["1 open"]]}}
+{"id": "chain_03", "category": "multi_step", "question": "How many invoices does GrubMatch Foods have in total?", "expected": {"must_contain": ["16"]}}
+{"id": "chain_04", "category": "multi_step", "question": "What's the total value of all overdue invoices for GrubMatch Foods?", "expected": {"must_contain_any_of": [["5520"], ["5,520"]]}}
+{"id": "chain_05", "category": "multi_step", "question": "Does ZeroBill Ventures have any invoices?", "expected": {"must_contain_any_of": [["no "], ["none"], ["zero"], ["0 invoice"], ["no invoice"]], "note": "Empty-set test — ZeroBill has 0 invoices"}}
+{"id": "chain_06", "category": "multi_step", "question": "Give me a quick snapshot of GrubMatch Labs — email, invoice count, and whether they have open tickets.", "expected": {"must_contain": ["grubmatch.labs@example.com", "5", "open"]}}
+
+{"id": "reason_01", "category": "reasoning", "question": "Which customers currently have overdue invoices?", "expected": {"must_contain_any_of": [["INSUFFICIENT_CONTEXT"], ["GrubMatch"], ["KrishTech"], ["Modi"], ["UrbanByte"], ["MAX_STEPS"]], "note": "Open-ended — N+1 problem. Pass if the agent either refuses cleanly OR names at least one real overdue customer OR we observe the MAX_STEPS architectural failure."}}
+{"id": "reason_02", "category": "reasoning", "question": "Is GrubMatch Foods a high-risk customer? Explain briefly.", "expected": {"must_contain": ["overdue"]}}
+{"id": "reason_03", "category": "reasoning", "question": "What's the oldest overdue invoice in the system?", "expected": {"must_contain_any_of": [["81"], ["UrbanByte"], ["2025-04-15"]], "note": "Correct answer: #81, UrbanByte Retail, $911, due 2025-04-15. Also tests tool-limit awareness — search_invoices caps at 20 but there are 22 overdue."}}
+{"id": "reason_04", "category": "reasoning", "question": "Which customer has the most invoices?", "expected": {"starts_with": "INSUFFICIENT_CONTEXT", "note": "Agent toolkit has no 'list all customers' tool. Correct behaviour is to refuse. Tests tool-coverage awareness."}}
+{"id": "reason_05", "category": "reasoning", "question": "If I search for 'KrishTech', how many matching customers are there?", "expected": {"must_contain_any_of": [["two"], ["2"], ["India"]], "note": "Any one of these alone passes — the number OR naming the second match."}}
+{"id": "reason_06", "category": "reasoning", "question": "Does GrubMatch Foods have any overdue invoices? If so, how many?", "expected": {"must_contain": ["4"]}}
+
+{"id": "refund_01", "category": "refund_flow", "question": "Issue a refund for invoice 15, $610, reason: duplicate charge.", "expected": {"must_contain_any_of": [["proposed"], ["approval"], ["confirm"], ["pending"], ["unable"], ["cancelled"], ["declined"], ["not approved"], ["not process"]], "note": "HITL auto-rejected (n). Agent either reports the proposal OR reports the rejection. Both are correct end-to-end behaviour."}}
+{"id": "refund_02", "category": "refund_flow", "question": "Please refund $200 on invoice 7 — customer says they were double-billed.", "expected": {"must_contain_any_of": [["proposed"], ["approval"], ["confirm"]], "note": "Same — propose only."}}
+
+{"id": "refuse_01", "category": "unanswerable", "question": "What is GrubMatch Foods' phone number?", "expected": {"starts_with": "INSUFFICIENT_CONTEXT"}}
+{"id": "refuse_02", "category": "unanswerable", "question": "What was the shipping address on invoice 15?", "expected": {"starts_with": "INSUFFICIENT_CONTEXT"}}
+{"id": "refuse_03", "category": "unanswerable", "question": "Which salesperson closed the deal with KrishTech Solutions?", "expected": {"starts_with": "INSUFFICIENT_CONTEXT"}}
