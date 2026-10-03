@@ -27,52 +27,46 @@ Recall@10 hits 1.000 across all three retrievers. Aggregates hide what the per-c
 
 ## Architecture
 
-```
-Ingest (once)
-┌─────────────────────────────────────────────────────────────┐
-│  PDF (Berkshire 2023, 17 pages)                             │
-│    │                                                        │
-│    ▼                                                        │
-│  pymupdf extract  →  strip page numbers / headers / dots    │
-│    │                                                        │
-│    ▼                                                        │
-│  chunker: recursive split                                   │
-│  (1000 chars max, 150 overlap)  →  55 chunks                │
-│    │                                                        │
-│    ▼                                                        │
-│  Gemini embedding (768 dim, MRL-truncated from 3072)        │
-│    │                                                        │
-│    ▼                                                        │
-│  Supabase Postgres + pgvector                               │
-│  (content, source_doc, page, chunk_id, embedding)           │
-└─────────────────────────────────────────────────────────────┘
+## Architecture
 
-Query (per question)
-┌─────────────────────────────────────────────────────────────┐
-│  question  →  Gemini embed  →  pgvector cosine search       │
-│                                (top 10, TOP_K = 10)         │
-│                                       │                     │
-│                                       ▼                     │
-│  build_prompt: system rules + 3 few-shot examples           │
-│  (full / partial / abstain) + retrieved chunks in XML tags  │
-│                                       │                     │
-│                                       ▼                     │
-│  Groq openai/gpt-oss-120b generates answer                  │
-│                                       │                     │
-│                                       ▼                     │
-│  answer with [chunk_id] citations, or INSUFFICIENT_CONTEXT  │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Ingest["Ingest (once per document)"]
+        direction TB
+        I1[Berkshire 2023 PDF<br/>17 pages]
+        I2[pymupdf extract<br/>strip page numbers,<br/>headers, dots]
+        I3[Recursive chunker<br/>1000 chars, 150 overlap<br/>55 chunks]
+        I4[Gemini embedding<br/>768 dim, MRL-truncated<br/>from 3072]
+        I5[(Supabase Postgres<br/>+ pgvector)]
+        I1 --> I2 --> I3 --> I4 --> I5
+    end
 
-Eval
-┌─────────────────────────────────────────────────────────────┐
-│  50 hand-reviewed golden questions                          │
-│  (42 answerable + 8 unanswerable, chunk-ID annotated)       │
-│    │                                                        │
-│    ▼                                                        │
-│  retrieval metrics: Recall@k, MRR, NDCG@10, Coverage@k      │
-│  generation metrics: attempts, abstentions, hallucinations  │
-└─────────────────────────────────────────────────────────────┘
+    subgraph Query["Query (per question)"]
+        direction TB
+        Q1([User question])
+        Q2[Gemini embed]
+        Q3[pgvector cosine search<br/>TOP_K = 10]
+        Q4[Build prompt<br/>system rules + 3 few-shot<br/>chunks in XML tags]
+        Q5[Groq openai/gpt-oss-120b]
+        Q6([Answer with chunk_id<br/>citations OR<br/>INSUFFICIENT_CONTEXT])
+        Q1 --> Q2 --> Q3 --> Q4 --> Q5 --> Q6
+    end
+
+    I5 -.->|retrieve top 10| Q3
+
+    subgraph Eval["Eval"]
+        direction TB
+        E1[50 hand-reviewed<br/>golden questions<br/>42 answerable + 8 unanswerable]
+        E2[Retrieval metrics<br/>Recall@k, MRR, NDCG@10,<br/>Coverage@k]
+        E3[Generation metrics<br/>attempts, abstentions,<br/>hallucinations]
+        E1 --> E2
+        E1 --> E3
+    end
+
+    Query -.->|run against| Eval
 ```
+
+A separate branch applies **cross-encoder reranking** on top of the base vector retrieval — pulls top-20 from pgvector, reranks with `bge-reranker-v2-m3`, keeps top-10. A third branch adds **contextual retrieval** by prepending a one-sentence LLM-generated summary to each chunk before embedding. All three retrievers are measured separately in the results table above.
 
 ## Stack
 
